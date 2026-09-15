@@ -141,9 +141,4 @@ gst-voice-billing/
 └── README.md
 ```
  
-## Notes
- 
-- **STT is still your open decision.** Both paths are already drawn in the diagram — worth a quick spike on 2–3 target Android devices to confirm the Tamil offline pack is actually present before the paper claims "zero recurring cost."
-- **`suppliers`/`purchases` are optional**, per your schema doc — skip that module unless the Balance Sheet needs real payables.
-- **`SVCVLOG`'s stored transcripts + `parsed_json`** double as a future training set if the rule-based parser ever needs to become a trained model.
- 
+
