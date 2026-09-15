@@ -2,11 +2,7 @@
  
 Target stack: PostgreSQL on Neon (serverless) · offline-first mobile client syncing to this schema.
  
-Changes from v1:
-- `ledger_entries.balance` removed (was a stored, cacheable-but-risky derived value — see Notes)
-- `ledger_entries.description` added (keeps manual adjustment rows self-explanatory now that there's no balance to eyeball)
-- `suppliers` + `purchases` added, marked optional — needed only if you're building the real Balance Sheet (payables)
-```mermaid
+
 erDiagram
     users ||--o{ businesses : owns
     businesses ||--o{ products : stocks
