@@ -2,7 +2,7 @@
  
 Target stack: PostgreSQL on Neon (serverless) · offline-first mobile client syncing to this schema.
  
-
+```mermaid
 erDiagram
     users ||--o{ businesses : owns
     businesses ||--o{ products : stocks
