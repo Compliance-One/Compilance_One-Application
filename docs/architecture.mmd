@@ -1,0 +1,150 @@
+%% ============================================================
+%% GST VOICE BILLING APP - System Architecture
+%% Pattern: Offline-First Mobile Client -> Sync Bridge -> Backend
+%% Services -> Neon Postgres, with Local Views enabling every
+%% compliance screen (Ledger, P&L, Balance Sheet, GSTR-1) to run
+%% fully offline; backend exists for backup/multi-device sync only
+%% ============================================================
+graph TD
+    %% ----- ACTOR & ENTRY POINT -----
+    USER(["Shopkeeper<br/>low tech / accounting literacy"])
+    HOME["Home Dashboard<br/>offline indicator + shortcuts"]
+
+    USER --> HOME
+    HOME --> VBi
+
+    %% ----- VOICE CAPTURE & NLU PIPELINE -----
+    VBi["Voice / Text Billing<br/>Screen"]
+    VBp1["Mic Capture<br/>Tamil speech input"]
+    VBp2{{"Speech-to-Text<br/>OPEN DECISION (unresolved):<br/>on-device model vs cloud API"}}
+    VBa[["NLU Parser<br/>splits utterance into items,<br/>extracts qty and amount,<br/>fuzzy-matches product name"]]
+    VBo["Structured Line Items<br/>plus confidence score"]
+
+    VBi --> VBp1 --> VBp2
+    VBp2 -->|"on-device path"| VBa
+    VBp2 -->|"cloud path"| CLOUDSTT
+    CLOUDSTT -->|"returns transcript"| VBa
+    VBa --> VBo
+    LOCALDB -->|"cached product master"| VBa
+
+    %% ----- INVOICE CREATION & PRINTING -----
+    INVi["Invoice Creation<br/>and Preview Screen"]
+    INVp["User Reviews and<br/>Edits Line Items"]
+    PRINTp["Print Receipt<br/>ESC/POS command"]
+
+    VBo --> INVi --> INVp
+    INVp -->|"confirm and save"| LOCALDB
+    LOCALDB --> PRINTp --> PRINTER
+
+    %% ----- PRODUCTS, CUSTOMERS, SETTINGS -----
+    MASTER["Products, Customers<br/>and Inventory Screen"]
+    SETTINGSUI["Settings Screen"]
+
+    MASTER -->|"add / edit"| LOCALDB
+    LOCALDB -->|"lookup / list"| MASTER
+    SETTINGSUI -->|"save"| LOCALDB
+    LOCALDB -->|"load"| SETTINGSUI
+
+    %% ----- LOCAL DATA & OFFLINE FINANCIAL ENGINE -----
+    LOCALDB[("Local SQLite Store<br/>mirrors server schema plus<br/>append-only outbox queue")]
+    LOCALVIEW[("Local Computed Views<br/>balance, P&L, balance sheet -<br/>same query logic as server,<br/>fully offline")]
+    REPORTUI["Reports Screen<br/>dashboards and trends"]
+    STMTUI["Ledger பேரேடு, P&L,<br/>Balance Sheet Screen"]
+    GSTRUI["GSTR-1 Export Screen"]
+
+    LOCALDB --> LOCALVIEW
+    LOCALVIEW --> REPORTUI
+    LOCALVIEW --> STMTUI
+    LOCALDB -->|"period's invoices"| GSTRUI
+    GSTRUI -->|"manual upload,<br/>needs internet"| GSTPORTAL
+
+    %% ----- SYNC BRIDGE -----
+    SYNCMGR{{"Sync Manager<br/>queue-based, resumable,<br/>retries on reconnect"}}
+    GATEWAY{{"API Gateway and Auth<br/>JWT session per business"}}
+
+    LOCALDB -->|"outbox: push queued rows"| SYNCMGR
+    SYNCMGR -->|"inbox: apply updates"| LOCALDB
+    SYNCMGR -->|"push sync batch"| GATEWAY
+
+    %% ----- BACKEND: SALES & MASTER-DATA SERVICES -----
+    SVCBIZ[["Business and User Service<br/>onboarding, GSTIN, profile"]]
+    SVCPROD[["Product / Inventory Service<br/>HSN and GST% master, stock"]]
+    SVCCUST[["Customer and Ledger Service<br/>append-only ledger_entries,<br/>never stores a balance"]]
+    SVCINV[["Invoice and Billing Service<br/>CGST/SGST/IGST split,<br/>HSN/rate snapshot at sale"]]
+    SVCPAY[["Payment Service<br/>records receipts,<br/>updates payment_status"]]
+
+    GATEWAY --> SVCBIZ
+    GATEWAY --> SVCPROD
+    GATEWAY --> SVCCUST
+    GATEWAY --> SVCINV
+    GATEWAY --> SVCPAY
+    SVCPAY -->|"generates ledger entry"| SVCCUST
+
+    %% ----- BACKEND: FINANCIAL & COMPLIANCE SERVICES -----
+    SVCEXP[["Expense Service<br/>purchases, rent, other costs"]]
+    SVCGSTR[["GSTR-1 Audit Service<br/>stores JSON already<br/>generated on-device"]]
+    SVCREPORT[["Reports Service<br/>server-side, for<br/>multi-device consistency"]]
+    SVCVLOG[["Voice Log Service<br/>transcript plus parsed_json,<br/>for audit and NLU tuning"]]
+    SVCSUPP[["Supplier / Purchases Service<br/>optional - only if payables<br/>must be real"]]
+
+    GATEWAY --> SVCEXP
+    GATEWAY --> SVCGSTR
+    GATEWAY --> SVCREPORT
+    GATEWAY --> SVCVLOG
+    GATEWAY --> SVCSUPP
+    SVCINV -->|"feeds invoice data"| SVCGSTR
+
+    %% ----- DATA LAYER -----
+    DB[("PostgreSQL on Neon<br/>serverless")]
+    VBAL[("customer_balances view<br/>SUM(credit) - SUM(debit)")]
+    VPL[("P&L view<br/>SUM(invoices) - SUM(expenses)")]
+    VBS[("Balance Sheet view<br/>assets minus liabilities")]
+
+    SVCBIZ --> DB
+    SVCPROD --> DB
+    SVCCUST --> DB
+    SVCINV --> DB
+    SVCPAY --> DB
+    SVCEXP --> DB
+    SVCGSTR --> DB
+    SVCVLOG --> DB
+    SVCSUPP --> DB
+    DB --> VBAL
+    DB --> VPL
+    DB --> VBS
+    SVCREPORT --> VBAL
+    SVCREPORT --> VPL
+    SVCREPORT --> VBS
+
+    %% ----- EXTERNAL SYSTEMS -----
+    CLOUDSTT["Cloud STT API<br/>for example Google or<br/>Azure Tamil model"]
+    GSTPORTAL["GST Portal<br/>Returns, GSTR-1,<br/>Offline Tools"]
+    PRINTER["Bluetooth Thermal<br/>Printer"]
+
+    %% ----- FEEDBACK / RESILIENCE LOOPS -----
+    VBp2 -.->|"no internet,<br/>cloud unreachable"| VBi
+    VBa -.->|"low match confidence"| INVi
+    GATEWAY -.->|"unreachable - queued,<br/>will retry"| SYNCMGR
+
+    %% ----- STYLE DEFINITIONS -----
+    classDef actorStyle fill:#1E293B,stroke:#0F172A,color:#FFFFFF,stroke-width:1px
+    classDef interfaceStyle fill:#2563EB,stroke:#1D4ED8,color:#FFFFFF,stroke-width:1px
+    classDef hubStyle fill:#7C3AED,stroke:#4C1D95,color:#FFFFFF,stroke-width:3px,font-weight:bold
+    classDef openDecisionStyle fill:#F59E0B,stroke:#B45309,color:#1B1B1B,stroke-width:3px,stroke-dasharray: 5 3,font-weight:bold
+    classDef serviceStyle fill:#0D9488,stroke:#0F766E,color:#FFFFFF,stroke-width:2px,font-weight:bold
+    classDef optionalStyle fill:#94A3B8,stroke:#64748B,color:#1B1B1B,stroke-width:1px,stroke-dasharray: 3 2
+    classDef processStyle fill:#F1F5F9,stroke:#CBD5E1,color:#334155,stroke-width:1px
+    classDef databaseStyle fill:#D97706,stroke:#92400E,color:#FFFFFF,stroke-width:3px,font-weight:bold
+    classDef viewStyle fill:#9333EA,stroke:#6B21A8,color:#FFFFFF,stroke-width:2px,font-weight:bold
+    classDef externalStyle fill:#E11D48,stroke:#9F1239,color:#FFFFFF,stroke-width:2px,font-weight:bold
+
+    class USER actorStyle
+    class HOME,VBi,INVi,MASTER,REPORTUI,STMTUI,GSTRUI,SETTINGSUI interfaceStyle
+    class SYNCMGR,GATEWAY hubStyle
+    class VBp2 openDecisionStyle
+    class VBa,SVCBIZ,SVCPROD,SVCCUST,SVCINV,SVCPAY,SVCEXP,SVCGSTR,SVCREPORT,SVCVLOG serviceStyle
+    class SVCSUPP optionalStyle
+    class VBp1,VBo,INVp,PRINTp processStyle
+    class LOCALDB,DB databaseStyle
+    class LOCALVIEW,VBAL,VPL,VBS viewStyle
+    class CLOUDSTT,GSTPORTAL,PRINTER externalStyle
