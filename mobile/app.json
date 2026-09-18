@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Compliance One",
+    "slug": "compliance-one",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "complianceone",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.complianceone.gstbilling",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "This app needs access to your microphone to transcribe items for billing.",
+        "NSSpeechRecognitionUsageDescription": "This app needs speech recognition to convert your voice bills into invoices.",
+        "NSBluetoothAlwaysUsageDescription": "This app uses Bluetooth to connect to ESC/POS thermal receipt printers.",
+        "NSBluetoothPeripheralUsageDescription": "This app uses Bluetooth to connect to ESC/POS thermal receipt printers."
+      }
+    },
+    "android": {
+      "package": "com.complianceone.gstbilling",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-localization",
+      "expo-sharing",
+      "expo-sqlite",
+      "expo-status-bar"
+    ]
+  }
+}
