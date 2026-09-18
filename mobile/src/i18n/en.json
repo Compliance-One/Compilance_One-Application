@@ -1,0 +1,28 @@
+{
+  "dashboard": {
+    "greeting": "Hello 👋",
+    "todaySales": "Today's Sales",
+    "todayInvoices": "Today's Invoices",
+    "quickActions": "Quick Actions",
+    "voiceBill": "Voice Bill",
+    "newInvoice": "New Invoice",
+    "products": "Products",
+    "customers": "Customers",
+    "reports": "Reports"
+  },
+  "voiceBilling": {
+    "title": "Voice Billing",
+    "voice": "Voice",
+    "text": "Text",
+    "tapToSpeak": "Tap to Speak",
+    "listening": "Listening...",
+    "heard": "Heard:",
+    "reviewInvoice": "Review Invoice →"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "print": "Print",
+    "add": "Add"
+  }
+}
