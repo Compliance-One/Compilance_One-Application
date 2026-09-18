@@ -1,0 +1,28 @@
+{
+  "dashboard": {
+    "greeting": "வணக்கம் 👋",
+    "todaySales": "இன்றைய விற்பனை",
+    "todayInvoices": "இன்றைய விலைப்பட்டிகள்",
+    "quickActions": "விரைவு செயல்கள்",
+    "voiceBill": "குரல் பில்",
+    "newInvoice": "புதிய விலைப்பட்டி",
+    "products": "பொருட்கள்",
+    "customers": "வாடிக்கையாளர்கள்",
+    "reports": "அறிக்கைகள்"
+  },
+  "voiceBilling": {
+    "title": "குரல் பில்லிங்",
+    "voice": "குரல்",
+    "text": "உரை",
+    "tapToSpeak": "பேச அழுத்தவும்",
+    "listening": "கேட்கிறது...",
+    "heard": "கேட்டது:",
+    "reviewInvoice": "பில்லை சரிபார்க்கவும் →"
+  },
+  "common": {
+    "save": "சேமி",
+    "cancel": "ரத்து செய்",
+    "print": "அச்சிடு",
+    "add": "சேர்"
+  }
+}
