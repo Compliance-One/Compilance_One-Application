@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional, List
 from sqlalchemy import (
     String, Text, Numeric, Boolean, Date, DateTime, 
@@ -8,6 +8,9 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.session import Base
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 class Business(Base):
     __tablename__ = "businesses"
@@ -22,7 +25,7 @@ class Business(Base):
     voice_language: Mapped[str] = mapped_column(String(10), default="ta-IN")
     offline_mode: Mapped[bool] = mapped_column(Boolean, default=True)
     printer_settings: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     products: Mapped[List["Product"]] = relationship(back_populates="business", cascade="all, delete-orphan")
     customers: Mapped[List["Customer"]] = relationship(back_populates="business", cascade="all, delete-orphan")
@@ -42,7 +45,7 @@ class Product(Base):
     unit: Mapped[str] = mapped_column(String(50), default="nos")
     price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
     stock_quantity: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     business: Mapped["Business"] = relationship(back_populates="products")
     invoice_items: Mapped[List["InvoiceItem"]] = relationship(back_populates="product")
@@ -58,7 +61,7 @@ class Customer(Base):
     address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     gstin: Mapped[Optional[str]] = mapped_column(String(15), nullable=True)
     customer_type: Mapped[str] = mapped_column(String(10), default="B2C")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     __table_args__ = (
         CheckConstraint("customer_type IN ('B2B', 'B2C')", name="check_customer_type"),
@@ -88,7 +91,7 @@ class Invoice(Base):
     payment_status: Mapped[str] = mapped_column(String(20), default="UNPAID")
     input_mode: Mapped[str] = mapped_column(String(20), default="voice")
     sync_status: Mapped[str] = mapped_column(String(20), default="synced")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     __table_args__ = (
         CheckConstraint("invoice_type IN ('B2B', 'B2C')", name="check_invoice_type"),
@@ -132,7 +135,7 @@ class Payment(Base):
     amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
     payment_mode: Mapped[str] = mapped_column(String(50), default="CASH")
     payment_date: Mapped[date] = mapped_column(Date, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     invoice: Mapped["Invoice"] = relationship(back_populates="payments")
     ledger_entries: Mapped[List["LedgerEntry"]] = relationship(back_populates="payment")
@@ -166,6 +169,6 @@ class Expense(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
     expense_date: Mapped[date] = mapped_column(Date, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     business: Mapped["Business"] = relationship(back_populates="expenses")
