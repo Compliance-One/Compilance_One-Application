@@ -115,3 +115,52 @@ async def test_reconcile_batch_unknown_entity_fails(test_client: AsyncClient):
     res_data = response.json()
     assert res_data["processed_ids"] == []
     assert res_data["failed_ids"] == [99]
+
+@pytest.mark.asyncio
+async def test_sync_pull_endpoint(test_client: AsyncClient):
+    business_id = str(uuid.uuid4())
+    customer_id = str(uuid.uuid4())
+
+    push_payload = {
+        "items": [
+            {
+                "outbox_id": 101,
+                "entity_type": "businesses",
+                "entity_id": business_id,
+                "operation": "INSERT",
+                "data": {
+                    "business_name": "Pull Test Enterprise",
+                    "gstin": "33BBBBB1111B1Z2",
+                    "voice_language": "ta-IN",
+                    "offline_mode": True
+                }
+            },
+            {
+                "outbox_id": 102,
+                "entity_type": "customers",
+                "entity_id": customer_id,
+                "operation": "INSERT",
+                "data": {
+                    "business_id": business_id,
+                    "name": "Live Test Customer",
+                    "phone": "9998887776",
+                    "customer_type": "B2C"
+                }
+            }
+        ]
+    }
+    push_res = await test_client.post("/api/v1/sync/push", json=push_payload)
+    assert push_res.status_code == 200
+    assert 101 in push_res.json()["processed_ids"]
+    assert 102 in push_res.json()["processed_ids"]
+
+    pull_res = await test_client.get(f"/api/v1/sync/pull?business_id={business_id}")
+    assert pull_res.status_code == 200
+    data = pull_res.json()
+
+    assert "server_time" in data
+    assert "changes" in data
+    assert len(data["changes"]["businesses"]) == 1
+    assert data["changes"]["businesses"][0]["id"] == business_id
+    assert len(data["changes"]["customers"]) == 1
+    assert data["changes"]["customers"][0]["id"] == customer_id

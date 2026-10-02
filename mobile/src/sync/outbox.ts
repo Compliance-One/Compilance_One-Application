@@ -1,4 +1,4 @@
-import * as SQLite from 'expo-sqlite';
+import { SQLiteDatabase } from 'expo-sqlite';
 
 export interface OutboxItem {
   id: number;
@@ -6,60 +6,72 @@ export interface OutboxItem {
   entity_id: string;
   operation: 'INSERT' | 'UPDATE' | 'DELETE';
   payload: string;
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+  retry_count: number;
+  last_error: string | null;
   created_at: string;
-  status: 'PENDING' | 'PROCESSING' | 'FAILED';
-  attempts: number;
+  updated_at: string;
 }
 
-export class OutboxManager {
-  constructor(private db: SQLite.SQLiteDatabase) {}
+export class OutboxRepository {
+  constructor(private db: SQLiteDatabase) {}
 
-  async enqueue(
-    entityType: string,
-    entityId: string,
-    operation: 'INSERT' | 'UPDATE' | 'DELETE',
-    payload: Record<string, unknown>
-  ): Promise<void> {
+  async recoverStuckProcessing(timeoutSeconds: number = 60): Promise<void> {
+    const threshold = new Date(Date.now() - timeoutSeconds * 1000).toISOString();
     await this.db.runAsync(
-      `INSERT INTO outbox (entity_type, entity_id, operation, payload, status)
-       VALUES (?, ?, ?, ?, 'PENDING')`,
-      [entityType, entityId, operation, JSON.stringify(payload)]
+      `UPDATE sync_outbox 
+       SET status = 'FAILED', 
+           retry_count = retry_count + 1,
+           last_error = 'Processing timeout recovery',
+           updated_at = CURRENT_TIMESTAMP
+       WHERE status = 'PROCESSING' AND updated_at < ?;`,
+      [threshold]
     );
   }
 
-  async getPendingBatch(limit = 50): Promise<OutboxItem[]> {
+  async getPendingBatch(limit: number = 50): Promise<OutboxItem[]> {
+    await this.recoverStuckProcessing(60);
     return await this.db.getAllAsync<OutboxItem>(
-      `SELECT * FROM outbox 
-       WHERE status = 'PENDING' OR (status = 'FAILED' AND attempts < 5)
-       ORDER BY id ASC LIMIT ?`,
+      `SELECT * FROM sync_outbox 
+       WHERE status IN ('PENDING', 'FAILED') AND retry_count < 5 
+       ORDER BY id ASC LIMIT ?;`,
       [limit]
     );
   }
 
   async markProcessing(ids: number[]): Promise<void> {
-    if (!ids.length) return;
+    if (ids.length === 0) return;
     const placeholders = ids.map(() => '?').join(',');
     await this.db.runAsync(
-      `UPDATE outbox SET status = 'PROCESSING' WHERE id IN (${placeholders})`,
+      `UPDATE sync_outbox 
+       SET status = 'PROCESSING', updated_at = CURRENT_TIMESTAMP 
+       WHERE id IN (${placeholders});`,
       ids
     );
   }
 
-  async markResolved(ids: number[]): Promise<void> {
-    if (!ids.length) return;
+  async markProcessed(ids: number[]): Promise<void> {
+    if (ids.length === 0) return;
     const placeholders = ids.map(() => '?').join(',');
     await this.db.runAsync(
-      `DELETE FROM outbox WHERE id IN (${placeholders})`,
+      `UPDATE sync_outbox 
+       SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP 
+       WHERE id IN (${placeholders});`,
       ids
     );
   }
 
-  async markFailed(id: number): Promise<void> {
+  async markBatchFailed(ids: number[], errorMessage: string): Promise<void> {
+    if (ids.length === 0) return;
+    const placeholders = ids.map(() => '?').join(',');
     await this.db.runAsync(
-      `UPDATE outbox 
-       SET status = 'FAILED', attempts = attempts + 1 
-       WHERE id = ?`,
-      [id]
+      `UPDATE sync_outbox 
+       SET status = 'FAILED', 
+           retry_count = retry_count + 1, 
+           last_error = ?,
+           updated_at = CURRENT_TIMESTAMP 
+       WHERE id IN (${placeholders});`,
+      [errorMessage, ...ids]
     );
   }
 }
