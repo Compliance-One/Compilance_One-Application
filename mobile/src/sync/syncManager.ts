@@ -1,68 +1,51 @@
-import { OutboxManager, OutboxItem } from './outbox';
-import { NetworkListener } from './netListener';
-import { ApiClient } from '../api/client';
+import { OutboxRepository, OutboxItem } from './outbox';
+import { SyncClient, SyncPushItem } from './client';
 
 export class SyncManager {
   private isSyncing = false;
 
   constructor(
-    private outbox: OutboxManager,
-    private netListener: NetworkListener,
-    private api: ApiClient
+    private outbox: OutboxRepository,
+    private client: SyncClient
   ) {}
 
-  init(): void {
-    this.netListener.startListening(async (isOnline) => {
-      if (isOnline) {
-        await this.syncPending();
-      }
-    });
-  }
-
-  async syncPending(): Promise<void> {
+  async processSync(): Promise<void> {
     if (this.isSyncing) return;
-
-    const isOnline = await this.netListener.checkCurrentStatus();
-    if (!isOnline) return;
-
     this.isSyncing = true;
 
+    let batch: OutboxItem[] = [];
     try {
-      const batch: OutboxItem[] = await this.outbox.getPendingBatch(50);
-      if (!batch.length) {
+      batch = await this.outbox.getPendingBatch(50);
+      if (batch.length === 0) {
         this.isSyncing = false;
         return;
       }
 
-      const itemIds = batch.map((item) => item.id);
-      await this.outbox.markProcessing(itemIds);
+      const batchIds = batch.map((item) => item.id);
+      await this.outbox.markProcessing(batchIds);
 
-      const payload = {
-        items: batch.map((item) => ({
-          outbox_id: item.id,
-          entity_type: item.entity_type,
-          entity_id: item.entity_id,
-          operation: item.operation,
-          data: JSON.parse(item.payload) as Record<string, unknown>,
-        })),
-      };
+      const pushItems: SyncPushItem[] = batch.map((item) => ({
+        outbox_id: item.id,
+        entity_type: item.entity_type,
+        entity_id: item.entity_id,
+        operation: item.operation,
+        data: JSON.parse(item.payload),
+      }));
 
-      const result = await this.api.pushBatch(payload);
+      const response = await this.client.pushSync(pushItems);
 
-      if (result.processed_ids?.length) {
-        await this.outbox.markResolved(result.processed_ids);
+      if (response.processed_ids.length > 0) {
+        await this.outbox.markProcessed(response.processed_ids);
       }
-
-      if (result.failed_ids?.length) {
-        for (const failedId of result.failed_ids) {
-          await this.outbox.markFailed(failedId);
-        }
+      if (response.failed_ids.length > 0) {
+        await this.outbox.markBatchFailed(response.failed_ids, 'Reconciler rejected item');
       }
-    } catch {
-      // Release processing status back so retries trigger on subsequent reconnects
-      const batch = await this.outbox.getPendingBatch(50);
-      for (const item of batch) {
-        await this.outbox.markFailed(item.id);
+    } catch (error: any) {
+      if (batch.length > 0) {
+        await this.outbox.markBatchFailed(
+          batch.map((b) => b.id),
+          error?.message || 'Network sync failure'
+        );
       }
     } finally {
       this.isSyncing = false;

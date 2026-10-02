@@ -16,7 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(sync_router, prefix="/api/v1")
+app.include_router(sync_router, prefix="/api/v1/sync")
 
 @app.get("/health")
 async def health_check():

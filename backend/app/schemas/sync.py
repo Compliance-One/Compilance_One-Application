@@ -1,22 +1,22 @@
-from enum import Enum
-from typing import Any, Dict, List
-from pydantic import BaseModel, Field
-
-class SyncOperation(str, Enum):
-    INSERT = "INSERT"
-    UPDATE = "UPDATE"
-    DELETE = "DELETE"
+from pydantic import BaseModel
+from typing import List, Dict, Any, Optional
+from datetime import datetime
+import uuid
 
 class SyncItemIn(BaseModel):
     outbox_id: int
     entity_type: str
     entity_id: str
-    operation: SyncOperation
+    operation: str
     data: Dict[str, Any]
 
-class SyncBatchIn(BaseModel):
-    items: List[SyncItemIn] = Field(default_factory=list)
+class SyncPushRequest(BaseModel):
+    items: List[SyncItemIn]
 
-class SyncPushResponse(BaseModel):
-    processed_ids: List[int] = Field(default_factory=list)
-    failed_ids: List[int] = Field(default_factory=list)
+class SyncBatchResult(BaseModel):
+    processed_ids: List[int]
+    failed_ids: List[int]
+
+class SyncPullResponse(BaseModel):
+    server_time: datetime
+    changes: Dict[str, List[Dict[str, Any]]]
