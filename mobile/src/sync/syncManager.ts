@@ -28,7 +28,7 @@ export class SyncManager {
     this.isSyncing = true;
 
     try {
-      const batch = await this.outbox.getPendingBatch(50);
+      const batch: OutboxItem[] = await this.outbox.getPendingBatch(50);
       if (!batch.length) {
         this.isSyncing = false;
         return;
@@ -38,12 +38,12 @@ export class SyncManager {
       await this.outbox.markProcessing(itemIds);
 
       const payload = {
-        items: batch.map((item: OutboxItem) => ({
+        items: batch.map((item) => ({
           outbox_id: item.id,
           entity_type: item.entity_type,
           entity_id: item.entity_id,
           operation: item.operation,
-          data: JSON.parse(item.payload),
+          data: JSON.parse(item.payload) as Record<string, unknown>,
         })),
       };
 
@@ -59,7 +59,7 @@ export class SyncManager {
         }
       }
     } catch {
-      // Revert processing items on network crash so they can retry
+      // Release processing status back so retries trigger on subsequent reconnects
       const batch = await this.outbox.getPendingBatch(50);
       for (const item of batch) {
         await this.outbox.markFailed(item.id);

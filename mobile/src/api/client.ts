@@ -1,16 +1,16 @@
-const BASE_URL = 'http://10.0.2.2:8000/api/v1'; // 10.0.2.2 points to host machine from Android emulator
+const BASE_URL = 'http://10.0.2.2:8000/api/v1'; // Android emulator host alias; use LAN IP for physical device
 
-export interface SyncPayload {
+export interface SyncPushPayload {
   items: Array<{
     outbox_id: number;
     entity_type: string;
     entity_id: string;
-    operation: string;
+    operation: 'INSERT' | 'UPDATE' | 'DELETE';
     data: Record<string, unknown>;
   }>;
 }
 
-export interface SyncResponse {
+export interface SyncPushResponse {
   processed_ids: number[];
   failed_ids: number[];
 }
@@ -22,7 +22,7 @@ export class ApiClient {
     this.token = token;
   }
 
-  async pushBatch(payload: SyncPayload): Promise<SyncResponse> {
+  async pushBatch(payload: SyncPushPayload): Promise<SyncPushResponse> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
@@ -37,9 +37,9 @@ export class ApiClient {
     });
 
     if (!response.ok) {
-      throw new Error(`Sync failed with HTTP status ${response.status}`);
+      throw new Error(`Sync push failed with status: ${response.status}`);
     }
 
-    return await response.json();
+    return (await response.json()) as SyncPushResponse;
   }
 }
