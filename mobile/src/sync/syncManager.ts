@@ -1,12 +1,12 @@
 import { OutboxRepository, OutboxItem } from './outbox';
-import { SyncClient, SyncPushItem } from './client';
+import { ApiClient, SyncPushItem } from './client';
 
 export class SyncManager {
   private isSyncing = false;
 
   constructor(
     private outbox: OutboxRepository,
-    private client: SyncClient
+    private client: ApiClient
   ) {}
 
   async processSync(): Promise<void> {
