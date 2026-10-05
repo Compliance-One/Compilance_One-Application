@@ -33,7 +33,25 @@ export class SyncClient {
       const errText = await response.text();
       throw new Error(`Sync Push failed (${response.status}): ${errText}`);
     }
+    return await response.json();
+  }
 
+  async pullSync(businessId: string, sinceIsoString?: string): Promise<any> {
+    let url = `${this.baseUrl}/sync/pull?business_id=${businessId}`;
+    if (sinceIsoString) {
+      url += `&since=${encodeURIComponent(sinceIsoString)}`;
+    }
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Sync Pull failed (${response.status}): ${errText}`);
+    }
     return await response.json();
   }
 }

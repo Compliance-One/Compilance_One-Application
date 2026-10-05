@@ -3,9 +3,7 @@ import * as SQLite from 'expo-sqlite';
 let dbInstance: SQLite.SQLiteDatabase | null = null;
 
 export const getDb = async (): Promise<SQLite.SQLiteDatabase> => {
-  if (dbInstance) {
-    return dbInstance;
-  }
+  if (dbInstance) return dbInstance;
   dbInstance = await SQLite.openDatabaseAsync('compliance_one.db');
   await initSchema(dbInstance);
   return dbInstance;
@@ -15,6 +13,15 @@ export const initSchema = async (db: SQLite.SQLiteDatabase): Promise<void> => {
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
+
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      phone TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE,
+      password_hash TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
 
     CREATE TABLE IF NOT EXISTS businesses (
       id TEXT PRIMARY KEY NOT NULL,
@@ -74,7 +81,8 @@ export const initSchema = async (db: SQLite.SQLiteDatabase): Promise<void> => {
       sync_status TEXT CHECK(sync_status IN ('pending', 'synced', 'failed')) DEFAULT 'pending',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE,
-      FOREIGN KEY (customer_id) REFERENCES customers(id)
+      FOREIGN KEY (customer_id) REFERENCES customers(id),
+      UNIQUE(business_id, invoice_number)
     );
 
     CREATE TABLE IF NOT EXISTS invoice_items (
@@ -130,22 +138,75 @@ export const initSchema = async (db: SQLite.SQLiteDatabase): Promise<void> => {
       FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS suppliers (
+      id TEXT PRIMARY KEY NOT NULL,
+      business_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      gstin TEXT,
+      phone TEXT,
+      address TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS purchases (
+      id TEXT PRIMARY KEY NOT NULL,
+      business_id TEXT NOT NULL,
+      supplier_id TEXT NOT NULL,
+      bill_number TEXT,
+      purchase_date TEXT,
+      amount REAL NOT NULL,
+      payment_status TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE,
+      FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS voice_transaction_logs (
+      id TEXT PRIMARY KEY NOT NULL,
+      business_id TEXT NOT NULL,
+      invoice_id TEXT,
+      raw_transcript TEXT,
+      parsed_json TEXT,
+      language TEXT,
+      input_mode TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE,
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS gstr1_exports (
+      id TEXT PRIMARY KEY NOT NULL,
+      business_id TEXT NOT NULL,
+      period_from TEXT,
+      period_to TEXT,
+      total_invoices INTEGER,
+      total_b2b INTEGER,
+      total_b2c INTEGER,
+      json_file_path TEXT,
+      status TEXT,
+      generated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS outbox (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       entity_type TEXT NOT NULL,
       entity_id TEXT NOT NULL,
       operation TEXT CHECK(operation IN ('INSERT', 'UPDATE', 'DELETE')) NOT NULL,
       payload TEXT NOT NULL,
+      status TEXT CHECK(status IN ('PENDING', 'PROCESSING', 'FAILED', 'COMPLETED')) DEFAULT 'PENDING',
+      attempts INTEGER DEFAULT 0,
+      last_error TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      status TEXT CHECK(status IN ('PENDING', 'PROCESSING', 'FAILED')) DEFAULT 'PENDING',
-      attempts INTEGER DEFAULT 0
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE VIEW IF NOT EXISTS v_customer_balances AS
     SELECT 
-      business_id, 
-      customer_id, 
-      (SUM(credit) - SUM(debit)) AS balance
+       business_id,
+       customer_id,
+       (SUM(credit) - SUM(debit)) AS balance
     FROM ledger_entries
     GROUP BY business_id, customer_id;
   `);
