@@ -7,7 +7,7 @@ export interface OutboxItem {
   operation: 'INSERT' | 'UPDATE' | 'DELETE';
   payload: string;
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
-  retry_count: number;
+  attempts: number;
   last_error: string | null;
   created_at: string;
   updated_at: string;
@@ -19,9 +19,9 @@ export class OutboxRepository {
   async recoverStuckProcessing(timeoutSeconds: number = 60): Promise<void> {
     const threshold = new Date(Date.now() - timeoutSeconds * 1000).toISOString();
     await this.db.runAsync(
-      `UPDATE sync_outbox 
+      `UPDATE outbox 
        SET status = 'FAILED', 
-           retry_count = retry_count + 1,
+           attempts = attempts + 1,
            last_error = 'Processing timeout recovery',
            updated_at = CURRENT_TIMESTAMP
        WHERE status = 'PROCESSING' AND updated_at < ?;`,
@@ -32,8 +32,8 @@ export class OutboxRepository {
   async getPendingBatch(limit: number = 50): Promise<OutboxItem[]> {
     await this.recoverStuckProcessing(60);
     return await this.db.getAllAsync<OutboxItem>(
-      `SELECT * FROM sync_outbox 
-       WHERE status IN ('PENDING', 'FAILED') AND retry_count < 5 
+      `SELECT * FROM outbox 
+       WHERE status IN ('PENDING', 'FAILED') AND attempts < 5 
        ORDER BY id ASC LIMIT ?;`,
       [limit]
     );
@@ -43,7 +43,7 @@ export class OutboxRepository {
     if (ids.length === 0) return;
     const placeholders = ids.map(() => '?').join(',');
     await this.db.runAsync(
-      `UPDATE sync_outbox 
+      `UPDATE outbox 
        SET status = 'PROCESSING', updated_at = CURRENT_TIMESTAMP 
        WHERE id IN (${placeholders});`,
       ids
@@ -54,7 +54,7 @@ export class OutboxRepository {
     if (ids.length === 0) return;
     const placeholders = ids.map(() => '?').join(',');
     await this.db.runAsync(
-      `UPDATE sync_outbox 
+      `UPDATE outbox 
        SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP 
        WHERE id IN (${placeholders});`,
       ids
@@ -65,9 +65,9 @@ export class OutboxRepository {
     if (ids.length === 0) return;
     const placeholders = ids.map(() => '?').join(',');
     await this.db.runAsync(
-      `UPDATE sync_outbox 
+      `UPDATE outbox 
        SET status = 'FAILED', 
-           retry_count = retry_count + 1, 
+           attempts = attempts + 1, 
            last_error = ?,
            updated_at = CURRENT_TIMESTAMP 
        WHERE id IN (${placeholders});`,

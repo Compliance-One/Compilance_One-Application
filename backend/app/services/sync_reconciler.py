@@ -4,15 +4,10 @@ from typing import List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy import delete
+
 from app.models.entities import (
-    Business,
-    Customer,
-    Product,
-    Invoice,
-    InvoiceItem,
-    Payment,
-    Expense,
-    LedgerEntry,
+    Business, Customer, Product, Invoice, InvoiceItem, Payment, Expense, LedgerEntry,
+    User, Supplier, Purchase, VoiceTransactionLog, Gstr1Export
 )
 from app.schemas.sync import SyncItemIn, SyncBatchResult
 
@@ -25,39 +20,41 @@ MODEL_MAP = {
     "payments": Payment,
     "expenses": Expense,
     "ledger_entries": LedgerEntry,
+    "users": User,
+    "suppliers": Supplier,
+    "purchases": Purchase,
+    "voice_transaction_logs": VoiceTransactionLog,
+    "gstr1_exports": Gstr1Export,
 }
 
 UUID_FIELDS = {
-    "id",
-    "business_id",
-    "customer_id",
-    "invoice_id",
-    "product_id",
-    "payment_id",
-    "expense_id",
+    "id", "business_id", "customer_id", "invoice_id", "product_id", "payment_id", 
+    "expense_id", "supplier_id", "owner_user_id"
 }
 
 DATE_FIELDS = {
-    "invoice_date",
-    "payment_date",
-    "expense_date",
-    "entry_date",
+    "invoice_date", "payment_date", "expense_date", "entry_date", 
+    "purchase_date", "period_from", "period_to"
 }
 
 TIMESTAMP_FIELDS = {
-    "created_at",
-    "updated_at",
+    "created_at", "updated_at", "generated_at"
 }
 
 ENTITY_PRIORITY = {
-    "businesses": 1,
-    "customers": 2,
-    "products": 3,
-    "invoices": 4,
-    "invoice_items": 5,
-    "payments": 6,
-    "expenses": 7,
-    "ledger_entries": 8,
+    "users": 1,
+    "businesses": 2,
+    "suppliers": 3,
+    "customers": 4,
+    "products": 5,
+    "purchases": 6,
+    "invoices": 7,
+    "invoice_items": 8,
+    "payments": 9,
+    "expenses": 10,
+    "ledger_entries": 11,
+    "voice_transaction_logs": 12,
+    "gstr1_exports": 13,
 }
 
 class SyncReconciler:
@@ -118,7 +115,6 @@ class SyncReconciler:
                     elif item.operation == "DELETE":
                         del_stmt = delete(model).where(model.id == entity_uuid)
                         await db.execute(del_stmt)
-
                     else:
                         failed_ids.append(item.outbox_id)
                         continue
