@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Numeric, Boolean, Date, DateTime, ForeignKey, Text, Integer
+from sqlalchemy import Column, UniqueConstraint, String, Numeric, Boolean, Date, DateTime, ForeignKey, Text, Integer
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from app.db.session import Base
@@ -56,7 +56,7 @@ class Invoice(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     business_id = Column(UUID(as_uuid=True), ForeignKey("businesses.id"))
     customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True)
-    invoice_number = Column(String, unique=True, nullable=False)
+    invoice_number = Column(String, nullable=False)
     invoice_date = Column(Date)
     invoice_type = Column(String, default="B2C")
     subtotal = Column(Numeric)
@@ -70,6 +70,9 @@ class Invoice(Base):
     input_mode = Column(String, default="text")
     sync_status = Column(String, default="synced")
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    __table_args__ = (
+        UniqueConstraint("business_id", "invoice_number", name="uix_business_id_invoice_number"),
+    )
 
 class InvoiceItem(Base):
     __tablename__ = "invoice_items"

@@ -1,18 +1,18 @@
 import { OutboxRepository, OutboxItem } from './outbox';
-import { ApiClient, SyncPushItem } from './client';
+import { SyncClient, SyncPushItem } from './client';
 
 export class SyncManager {
   private isSyncing = false;
 
   constructor(
     private outbox: OutboxRepository,
-    private client: ApiClient
+    private client: SyncClient
   ) {}
 
   async processSync(): Promise<void> {
     if (this.isSyncing) return;
     this.isSyncing = true;
-
+    
     let batch: OutboxItem[] = [];
     try {
       batch = await this.outbox.getPendingBatch(50);
@@ -28,7 +28,7 @@ export class SyncManager {
         outbox_id: item.id,
         entity_type: item.entity_type,
         entity_id: item.entity_id,
-        operation: item.operation,
+        operation: item.operation as "INSERT" | "UPDATE" | "DELETE",
         data: JSON.parse(item.payload),
       }));
 
