@@ -1,37 +1,63 @@
-import * as SQLite from 'expo-sqlite';
+/**
+ * Local equivalent of the Postgres `pl_income_entries` / `pl_expense_entries`
+ * views (see backend/app/db/views.sql). Must stay in lockstep with that file.
+ *
+ * TODO (integration): swap `db` for whatever Member 1 exports from
+ * mobile/src/db/schema.ts.
+ */
 
-export interface ProfitLossStatement {
-  total_revenue: number;
-  total_expenses: number;
-  net_profit: number;
+import type { SQLiteDatabase } from 'expo-sqlite';
+
+export interface ProfitAndLoss {
+  periodFrom: string;
+  periodTo: string;
+  totalIncome: number;
+  totalExpense: number;
+  netProfit: number;
+  incomeByCategory: Record<string, number>;
+  expenseByCategory: Record<string, number>;
 }
 
-export const getProfitLoss = async (
-  db: SQLite.SQLiteDatabase,
+export async function getProfitAndLoss(
+  db: SQLiteDatabase,
   businessId: string,
-  startDate: string,
-  endDate: string
-): Promise<ProfitLossStatement> => {
-  const revenueResult = await db.getFirstAsync<{ total_revenue: number | null }>(
-    `SELECT COALESCE(SUM(taxable_amount), 0.0) AS total_revenue
+  fromDate: string,
+  toDate: string
+): Promise<ProfitAndLoss> {
+  // Pre-tax revenue only — taxable_amount, not total_amount. GST collected
+  // is not income, it's money held for the government.
+  const incomeRows = await db.getAllAsync<{ category: string; total: number }>(
+    `SELECT 'sales' AS category, SUM(taxable_amount) AS total
      FROM invoices
-     WHERE business_id = ? AND invoice_date BETWEEN ? AND ?`,
-    [businessId, startDate, endDate]
+     WHERE business_id = ? AND invoice_date BETWEEN ? AND ?
+     GROUP BY category`,
+    [businessId, fromDate, toDate]
   );
 
-  const expenseResult = await db.getFirstAsync<{ total_expenses: number | null }>(
-    `SELECT COALESCE(SUM(amount), 0.0) AS total_expenses
+  const expenseRows = await db.getAllAsync<{ category: string; total: number }>(
+    `SELECT category, SUM(amount) AS total
      FROM expenses
-     WHERE business_id = ? AND expense_date BETWEEN ? AND ?`,
-    [businessId, startDate, endDate]
+     WHERE business_id = ? AND expense_date BETWEEN ? AND ?
+     GROUP BY category`,
+    [businessId, fromDate, toDate]
   );
 
-  const total_revenue = revenueResult?.total_revenue ?? 0.0;
-  const total_expenses = expenseResult?.total_expenses ?? 0.0;
+  const incomeByCategory: Record<string, number> = {};
+  for (const r of incomeRows) incomeByCategory[r.category] = r.total;
+
+  const expenseByCategory: Record<string, number> = {};
+  for (const r of expenseRows) expenseByCategory[r.category] = r.total;
+
+  const totalIncome = Object.values(incomeByCategory).reduce((a, b) => a + b, 0);
+  const totalExpense = Object.values(expenseByCategory).reduce((a, b) => a + b, 0);
 
   return {
-    total_revenue,
-    total_expenses,
-    net_profit: total_revenue - total_expenses,
+    periodFrom: fromDate,
+    periodTo: toDate,
+    totalIncome,
+    totalExpense,
+    netProfit: totalIncome - totalExpense,
+    incomeByCategory,
+    expenseByCategory,
   };
-};
+}

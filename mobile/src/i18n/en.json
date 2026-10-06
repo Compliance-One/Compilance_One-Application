@@ -1,0 +1,58 @@
+{
+  "dashboard": {
+    "title": "Dashboard",
+    "totalSales": "Total Sales",
+    "totalInvoices": "Total Invoices",
+    "taxableAmount": "Taxable Amount",
+    "totalGst": "Total GST",
+    "offline": "Offline"
+  },
+  "reports": {
+    "title": "Reports",
+    "cgst": "CGST",
+    "sgst": "SGST",
+    "igst": "IGST",
+    "selectPeriod": "Select period"
+  },
+  "ledger": {
+    "title": "Ledger",
+    "balance": "Balance",
+    "debit": "Debit",
+    "credit": "Credit",
+    "runningBalance": "Running Balance",
+    "noEntries": "No entries for this customer yet"
+  },
+  "profitLoss": {
+    "title": "Profit & Loss",
+    "income": "Income",
+    "expense": "Expense",
+    "netProfit": "Net Profit"
+  },
+  "balanceSheet": {
+    "title": "Balance Sheet",
+    "cashAndBank": "Cash & Bank",
+    "stockValue": "Stock Value",
+    "receivables": "Receivables",
+    "payables": "Payables",
+    "ownersCapital": "Owner's Capital"
+  },
+  "gstr1Export": {
+    "title": "GSTR-1 Export",
+    "from": "From",
+    "to": "To",
+    "totalB2B": "Total B2B",
+    "totalB2C": "Total B2C",
+    "generate": "Generate GSTR-1",
+    "exportExcel": "Export as Excel",
+    "generatedSuccess": "GSTR-1 JSON generated successfully"
+  },
+  "settings": {
+    "title": "Settings",
+    "businessProfile": "Business Profile",
+    "gstSettings": "GST Settings",
+    "printerSettings": "Printer Settings",
+    "backupRestore": "Backup & Restore",
+    "language": "Language",
+    "offlineMode": "Offline Mode"
+  }
+}
