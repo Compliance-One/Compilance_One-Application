@@ -1,14 +1,8 @@
 /**
- * Local equivalent of the Postgres `balance_sheet` view (see
- * backend/app/db/views.sql). Must stay in lockstep with that file.
- *
- * KNOWN GAP — same as the backend side: there is no cash/bank account
- * table in the schema, so cashAndBank is hardcoded to 0 here too. Don't
- * fix this only on one side — if a cash ledger gets added, update both
- * backend/app/db/views.sql and this file together.
- *
- * TODO (integration): swap `db` for whatever Member 1 exports from
- * mobile/src/db/schema.ts.
+ * Local balance sheet calculation, matching the Postgres v_balance_sheet
+ * view added by the a1f4c9d02b7e migration. cashAndBank stays 0 until a
+ * cash ledger table exists — this is a known gap, not a bug; raise with
+ * the team before relying on it in the UI.
  */
 
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -32,22 +26,21 @@ export async function getBalanceSheet(
   );
 
   const receivablesRow = await db.getFirstAsync<{ receivables: number | null }>(
-    `SELECT SUM(balance) AS receivables FROM (
-       SELECT customer_id, SUM(credit) - SUM(debit) AS balance
-       FROM ledger_entries WHERE business_id = ?
-       GROUP BY customer_id
-     ) WHERE balance > 0`,
+    `SELECT SUM(balance) AS receivables
+     FROM v_customer_balances
+     WHERE business_id = ? AND balance > 0`,
     [businessId]
   );
 
-  // Only returns a real number if suppliers/purchases are in use locally too.
+  // schema.ts's CHECK constraint uses uppercase ('UNPAID'); normalize
+  // with UPPER() in case any data ever comes in lowercase from sync.
   const payablesRow = await db.getFirstAsync<{ payables: number | null }>(
     `SELECT SUM(amount) AS payables FROM purchases
-     WHERE business_id = ? AND payment_status = 'unpaid'`,
+     WHERE business_id = ? AND UPPER(payment_status) = 'UNPAID'`,
     [businessId]
   );
 
-  const cashAndBank = 0; // TODO: no cash/bank table yet — see note above
+  const cashAndBank = 0; // TODO: no cash/bank table yet
   const stockValue = stockRow?.stock_value ?? 0;
   const receivables = receivablesRow?.receivables ?? 0;
   const payables = payablesRow?.payables ?? 0;

@@ -1,9 +1,6 @@
 /**
- * Local equivalent of the Postgres `pl_income_entries` / `pl_expense_entries`
- * views (see backend/app/db/views.sql). Must stay in lockstep with that file.
- *
- * TODO (integration): swap `db` for whatever Member 1 exports from
- * mobile/src/db/schema.ts.
+ * Mirrors the Postgres v_pl_income_entries / v_pl_expense_entries views
+ * (a1f4c9d02b7e migration). Column names confirmed against schema.ts.
  */
 
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -24,8 +21,6 @@ export async function getProfitAndLoss(
   fromDate: string,
   toDate: string
 ): Promise<ProfitAndLoss> {
-  // Pre-tax revenue only — taxable_amount, not total_amount. GST collected
-  // is not income, it's money held for the government.
   const incomeRows = await db.getAllAsync<{ category: string; total: number }>(
     `SELECT 'sales' AS category, SUM(taxable_amount) AS total
      FROM invoices

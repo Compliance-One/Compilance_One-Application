@@ -1,25 +1,20 @@
 """
-GSTR-1 export endpoint (SVCGSTR).
-
-Per the architecture: GSTR-1 JSON is generated ON-DEVICE
-(mobile/src/gstr1/generateGstr1.ts), fully offline. This backend endpoint
-only STORES the already-generated export as an audit record when the
-device later syncs — it does not regenerate the JSON.
+GSTR-1 export audit endpoint. The JSON itself is generated ON-DEVICE
+(mobile/src/gstr1/generateGstr1.ts), fully offline — this just records
+that an export happened, for audit/history purposes once the device syncs.
 """
 
-from datetime import date
-from typing import Optional
-from uuid import UUID
+import uuid
+from datetime import date, datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db  # TODO: confirm with Member 1
-from app.core.security import get_current_business_id  # TODO: confirm with Member 2
+from app.db.session import get_db
 
-router = APIRouter(prefix="/gstr1", tags=["gstr1"])
+router = APIRouter()
 
 
 class Gstr1ExportIn(BaseModel):
@@ -28,48 +23,51 @@ class Gstr1ExportIn(BaseModel):
     total_invoices: int
     total_b2b: int
     total_b2c: int
-    json_file_path: str  # wherever the synced JSON blob/file ends up server-side
+    json_file_path: str
     status: str = "generated"
 
 
 class Gstr1ExportOut(Gstr1ExportIn):
-    id: UUID
-    generated_at: str
+    id: uuid.UUID
+    business_id: uuid.UUID
+    generated_at: datetime
 
 
 @router.post("", response_model=Gstr1ExportOut)
-def record_gstr1_export(
+async def record_gstr1_export(
     payload: Gstr1ExportIn,
-    db: Session = Depends(get_db),
-    business_id: UUID = Depends(get_current_business_id),
+    business_id: uuid.UUID = Query(...),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Audit-record a GSTR-1 export the device already generated offline."""
-    row = db.execute(
+    new_id = uuid.uuid4()
+    result = await db.execute(
         text(
             """
             INSERT INTO gstr1_exports
-                (business_id, period_from, period_to, total_invoices,
-                 total_b2b, total_b2c, json_file_path, status)
+                (id, business_id, period_from, period_to, total_invoices,
+                 total_b2b, total_b2c, json_file_path, status, generated_at)
             VALUES
-                (:business_id, :period_from, :period_to, :total_invoices,
-                 :total_b2b, :total_b2c, :json_file_path, :status)
+                (:id, :business_id, :period_from, :period_to,
+                 :total_invoices, :total_b2b, :total_b2c, :json_file_path,
+                 :status, now())
             RETURNING id, business_id, period_from, period_to,
                       total_invoices, total_b2b, total_b2c,
                       json_file_path, status, generated_at
             """
         ),
-        {"business_id": str(business_id), **payload.model_dump()},
-    ).mappings().one()
-    db.commit()
+        {"id": str(new_id), "business_id": str(business_id), **payload.model_dump()},
+    )
+    row = result.mappings().one()
+    await db.commit()
     return Gstr1ExportOut(**row)
 
 
 @router.get("", response_model=list[Gstr1ExportOut])
-def list_gstr1_exports(
-    db: Session = Depends(get_db),
-    business_id: UUID = Depends(get_current_business_id),
+async def list_gstr1_exports(
+    business_id: uuid.UUID = Query(...),
+    db: AsyncSession = Depends(get_db),
 ):
-    rows = db.execute(
+    result = await db.execute(
         text(
             """
             SELECT id, business_id, period_from, period_to, total_invoices,
@@ -80,5 +78,6 @@ def list_gstr1_exports(
             """
         ),
         {"business_id": str(business_id)},
-    ).mappings().all()
+    )
+    rows = result.mappings().all()
     return [Gstr1ExportOut(**row) for row in rows]

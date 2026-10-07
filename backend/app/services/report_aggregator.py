@@ -1,44 +1,48 @@
 """
-Aggregation logic shared by reports.py and excel_export.py, so the Excel
-file and the in-app reports can never show different numbers.
+Async aggregation logic shared by reports.py and the Excel export route,
+so the download and the in-app reports can never show different numbers.
 """
 
+import uuid
 from datetime import date
-from uuid import UUID
 
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
-def get_profit_and_loss(db: Session, business_id: UUID, from_date: date, to_date: date) -> dict:
-    income_rows = db.execute(
+async def get_profit_and_loss(
+    db: AsyncSession, business_id: uuid.UUID, from_date: date, to_date: date
+) -> dict:
+    income_result = await db.execute(
         text(
             """
             SELECT category, SUM(amount) AS total
-            FROM pl_income_entries
+            FROM v_pl_income_entries
             WHERE business_id = :business_id
               AND entry_date BETWEEN :from_date AND :to_date
             GROUP BY category
             """
         ),
         {"business_id": str(business_id), "from_date": from_date, "to_date": to_date},
-    ).mappings().all()
+    )
+    income_rows = income_result.mappings().all()
 
-    expense_rows = db.execute(
+    expense_result = await db.execute(
         text(
             """
             SELECT category, SUM(amount) AS total
-            FROM pl_expense_entries
+            FROM v_pl_expense_entries
             WHERE business_id = :business_id
               AND entry_date BETWEEN :from_date AND :to_date
             GROUP BY category
             """
         ),
         {"business_id": str(business_id), "from_date": from_date, "to_date": to_date},
-    ).mappings().all()
+    )
+    expense_rows = expense_result.mappings().all()
 
     income_by_category = {r["category"]: float(r["total"]) for r in income_rows}
-    expense_by_category = {r["category"]: float(r["total"]) for r in expense_rows}
+    expense_by_category = {r["category"]: float(r["total"] or 0) for r in expense_rows}
     total_income = sum(income_by_category.values())
     total_expense = sum(expense_by_category.values())
 
@@ -53,23 +57,37 @@ def get_profit_and_loss(db: Session, business_id: UUID, from_date: date, to_date
     }
 
 
-def get_balance_sheet(db: Session, business_id: UUID) -> dict:
-    row = db.execute(
+async def get_balance_sheet(db: AsyncSession, business_id: uuid.UUID) -> dict:
+    result = await db.execute(
         text(
             """
             SELECT business_id, cash_and_bank, stock_value, receivables,
                    payables, owners_capital
-            FROM balance_sheet
+            FROM v_balance_sheet
             WHERE business_id = :business_id
             """
         ),
         {"business_id": str(business_id)},
-    ).mappings().one()
+    )
+    row = result.mappings().first()
+    if row is None:
+        # Business has no products/ledger activity yet, or doesn't exist —
+        # return a zeroed statement instead of raising.
+        return {
+            "business_id": business_id,
+            "cash_and_bank": 0,
+            "stock_value": 0,
+            "receivables": 0,
+            "payables": 0,
+            "owners_capital": 0,
+        }
     return dict(row)
 
 
-def get_dashboard_summary(db: Session, business_id: UUID, from_date: date, to_date: date) -> dict:
-    row = db.execute(
+async def get_dashboard_summary(
+    db: AsyncSession, business_id: uuid.UUID, from_date: date, to_date: date
+) -> dict:
+    result = await db.execute(
         text(
             """
             SELECT
@@ -85,7 +103,8 @@ def get_dashboard_summary(db: Session, business_id: UUID, from_date: date, to_da
             """
         ),
         {"business_id": str(business_id), "from_date": from_date, "to_date": to_date},
-    ).mappings().one()
+    )
+    row = result.mappings().one()
 
     return {
         "period_from": from_date,

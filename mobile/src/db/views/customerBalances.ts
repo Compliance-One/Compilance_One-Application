@@ -1,10 +1,8 @@
 /**
- * Local equivalent of the Postgres `customer_balances` / `customer_ledger_statement`
- * views (see backend/app/db/views.sql). Must stay in lockstep with that file —
- * if the formula changes on one side, change it here too.
- *
- * TODO (integration): swap `db` for whatever Member 1 actually exports from
- * mobile/src/db/schema.ts (likely an expo-sqlite or drizzle-orm instance).
+ * Queries the v_customer_balances view already defined in
+ * mobile/src/db/schema.ts — do not redefine the formula here, this
+ * file just reads it. Postgres has the matching view via the
+ * a1f4c9d02b7e migration.
  */
 
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -26,23 +24,26 @@ export interface LedgerEntry {
   runningBalance: number;
 }
 
-/** Current balance for every customer of this business — never cached. */
 export async function getCustomerBalances(
   db: SQLiteDatabase,
   businessId: string
 ): Promise<CustomerBalance[]> {
   const rows = await db.getAllAsync<{ customer_id: string; balance: number }>(
-    `SELECT customer_id, SUM(credit) - SUM(debit) AS balance
-     FROM ledger_entries
+    `SELECT customer_id, balance
+     FROM v_customer_balances
      WHERE business_id = ?
-     GROUP BY customer_id
      ORDER BY balance DESC`,
     [businessId]
   );
   return rows.map((r) => ({ customerId: r.customer_id, balance: r.balance }));
 }
 
-/** Full running-balance statement for one customer (Ledger screen). */
+/**
+ * No v_customer_ledger_statement view exists in schema.ts yet, so this
+ * stays a raw query (SQLite 3.25+, which Expo bundles, supports the
+ * window function). Matches the Postgres v_customer_ledger_statement
+ * view added by the a1f4c9d02b7e migration.
+ */
 export async function getCustomerStatement(
   db: SQLiteDatabase,
   businessId: string,
@@ -50,8 +51,6 @@ export async function getCustomerStatement(
   fromDate?: string,
   toDate?: string
 ): Promise<LedgerEntry[]> {
-  // SQLite (3.25+, which Expo bundles) supports window functions, so this
-  // mirrors the Postgres `customer_ledger_statement` view exactly.
   const rows = await db.getAllAsync<any>(
     `SELECT id, customer_id, invoice_id, payment_id, debit, credit,
             description, entry_date,

@@ -1,41 +1,33 @@
 """
-Customer & Ledger reporting endpoints (SVCCUST reporting side).
-
-NOTE: the actual customer CRUD (create/edit customer) belongs wherever
-Member 3 builds customers.py. This file only exposes read endpoints over
-the ledger views — it never writes a balance, matching the schema's
-append-only design.
-
-TODO (integration): replace `get_db` and `get_current_business_id` imports
-below with whatever Member 1 / Member 2 actually name their dependencies
-in app/db/session.py and app/core/security.py.
+Customer & Ledger reporting endpoints. No auth layer exists in this repo
+yet (see sync.py) — business_id is passed as a plain query param, same
+convention as /api/v1/sync/pull. Update this file when real auth lands.
 """
 
+import uuid
 from datetime import date
 from typing import Optional
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db  # TODO: confirm actual path/name with Member 1
-from app.core.security import get_current_business_id  # TODO: confirm with Member 2
+from app.db.session import get_db
 
-router = APIRouter(prefix="/customers-ledger", tags=["ledger"])
+router = APIRouter()
 
 
 class CustomerBalance(BaseModel):
-    customer_id: UUID
+    customer_id: uuid.UUID
     balance: float
 
 
 class LedgerEntry(BaseModel):
-    id: UUID
-    customer_id: UUID
-    invoice_id: Optional[UUID]
-    payment_id: Optional[UUID]
+    id: uuid.UUID
+    customer_id: uuid.UUID
+    invoice_id: Optional[uuid.UUID]
+    payment_id: Optional[uuid.UUID]
     debit: float
     credit: float
     description: Optional[str]
@@ -44,40 +36,39 @@ class LedgerEntry(BaseModel):
 
 
 @router.get("/balances", response_model=list[CustomerBalance])
-def list_customer_balances(
-    db: Session = Depends(get_db),
-    business_id: UUID = Depends(get_current_business_id),
+async def list_customer_balances(
+    business_id: uuid.UUID = Query(..., description="Target business UUID"),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Current balance for every customer of this business (VBAL)."""
-    rows = db.execute(
+    result = await db.execute(
         text(
             """
             SELECT customer_id, balance
-            FROM customer_balances
+            FROM v_customer_balances
             WHERE business_id = :business_id
             ORDER BY balance DESC
             """
         ),
         {"business_id": str(business_id)},
-    ).mappings().all()
+    )
+    rows = result.mappings().all()
     return [CustomerBalance(**row) for row in rows]
 
 
 @router.get("/{customer_id}/statement", response_model=list[LedgerEntry])
-def customer_statement(
-    customer_id: UUID,
+async def customer_statement(
+    customer_id: uuid.UUID,
+    business_id: uuid.UUID = Query(..., description="Target business UUID"),
     from_date: Optional[date] = Query(None),
     to_date: Optional[date] = Query(None),
-    db: Session = Depends(get_db),
-    business_id: UUID = Depends(get_current_business_id),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Full running-balance statement for one customer (Ledger screen)."""
-    rows = db.execute(
+    result = await db.execute(
         text(
             """
             SELECT id, customer_id, invoice_id, payment_id, debit, credit,
                    description, entry_date, running_balance
-            FROM customer_ledger_statement
+            FROM v_customer_ledger_statement
             WHERE business_id = :business_id
               AND customer_id = :customer_id
               AND (:from_date IS NULL OR entry_date >= :from_date)
@@ -91,5 +82,6 @@ def customer_statement(
             "from_date": from_date,
             "to_date": to_date,
         },
-    ).mappings().all()
+    )
+    rows = result.mappings().all()
     return [LedgerEntry(**row) for row in rows]

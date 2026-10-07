@@ -1,26 +1,20 @@
-"""
-Reports endpoints — P&L (VPL) and Balance Sheet (VBS) over a date range,
-plus a dashboard summary. Thin layer: real aggregation logic lives in
-services/report_aggregator.py so it's reusable by excel_export.py too.
-"""
-
-from datetime import date
-from typing import Optional
-from uuid import UUID
+import uuid
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db  # TODO: confirm with Member 1
-from app.core.security import get_current_business_id  # TODO: confirm with Member 2
+from app.db.session import get_db
 from app.services.report_aggregator import (
     get_profit_and_loss,
     get_balance_sheet,
     get_dashboard_summary,
 )
+from app.services.excel_export import build_financial_statements_xlsx
 
-router = APIRouter(prefix="/reports", tags=["reports"])
+router = APIRouter()
 
 
 class ProfitAndLoss(BaseModel):
@@ -34,16 +28,12 @@ class ProfitAndLoss(BaseModel):
 
 
 class BalanceSheet(BaseModel):
-    business_id: UUID
+    business_id: uuid.UUID
     cash_and_bank: float
     stock_value: float
     receivables: float
     payables: float
     owners_capital: float
-    note: str = (
-        "cash_and_bank is currently always 0 — no cash/bank ledger exists "
-        "in the schema yet. Flag this before presenting real figures."
-    )
 
 
 class DashboardSummary(BaseModel):
@@ -59,28 +49,47 @@ class DashboardSummary(BaseModel):
 
 
 @router.get("/profit-loss", response_model=ProfitAndLoss)
-def profit_and_loss(
+async def profit_and_loss(
+    business_id: uuid.UUID = Query(...),
     from_date: date = Query(...),
     to_date: date = Query(...),
-    db: Session = Depends(get_db),
-    business_id: UUID = Depends(get_current_business_id),
+    db: AsyncSession = Depends(get_db),
 ):
-    return get_profit_and_loss(db, business_id, from_date, to_date)
+    return await get_profit_and_loss(db, business_id, from_date, to_date)
 
 
 @router.get("/balance-sheet", response_model=BalanceSheet)
-def balance_sheet(
-    db: Session = Depends(get_db),
-    business_id: UUID = Depends(get_current_business_id),
+async def balance_sheet(
+    business_id: uuid.UUID = Query(...),
+    db: AsyncSession = Depends(get_db),
 ):
-    return get_balance_sheet(db, business_id)
+    return await get_balance_sheet(db, business_id)
 
 
 @router.get("/dashboard-summary", response_model=DashboardSummary)
-def dashboard_summary(
+async def dashboard_summary(
+    business_id: uuid.UUID = Query(...),
     from_date: date = Query(...),
     to_date: date = Query(...),
-    db: Session = Depends(get_db),
-    business_id: UUID = Depends(get_current_business_id),
+    db: AsyncSession = Depends(get_db),
 ):
-    return get_dashboard_summary(db, business_id, from_date, to_date)
+    return await get_dashboard_summary(db, business_id, from_date, to_date)
+
+
+@router.get("/export/excel")
+async def export_excel(
+    business_id: uuid.UUID = Query(...),
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    pl = await get_profit_and_loss(db, business_id, from_date, to_date)
+    bs = await get_balance_sheet(db, business_id)
+    xlsx_bytes = build_financial_statements_xlsx(pl, bs)
+
+    filename = f"statements_{from_date}_{to_date}.xlsx"
+    return StreamingResponse(
+        iter([xlsx_bytes]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

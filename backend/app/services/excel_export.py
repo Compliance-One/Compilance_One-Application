@@ -1,34 +1,23 @@
 """
-Excel export for P&L and Balance Sheet, using the same numbers the app
-screens show (via report_aggregator) so the download never disagrees
-with the in-app reports.
+Builds the Excel workbook from already-fetched P&L / balance sheet dicts
+(see reports.py's /export/excel route). Kept synchronous on purpose —
+openpyxl itself is sync, and this way it never needs its own DB session.
 """
 
-from datetime import date
 from io import BytesIO
-from uuid import UUID
 
 from openpyxl import Workbook
 from openpyxl.styles import Font
-from sqlalchemy.orm import Session
-
-from app.services.report_aggregator import get_profit_and_loss, get_balance_sheet
 
 BOLD = Font(bold=True)
 
 
-def export_financial_statements_xlsx(
-    db: Session, business_id: UUID, from_date: date, to_date: date
-) -> bytes:
-    pl = get_profit_and_loss(db, business_id, from_date, to_date)
-    bs = get_balance_sheet(db, business_id)
-
+def build_financial_statements_xlsx(pl: dict, bs: dict) -> bytes:
     wb = Workbook()
 
-    # ---- P&L sheet ----
     ws_pl = wb.active
     ws_pl.title = "Profit and Loss"
-    ws_pl.append(["Profit & Loss", f"{from_date} to {to_date}"])
+    ws_pl.append(["Profit & Loss", f"{pl['period_from']} to {pl['period_to']}"])
     ws_pl["A1"].font = BOLD
     ws_pl.append([])
     ws_pl.append(["Income by category"])
@@ -45,12 +34,11 @@ def export_financial_statements_xlsx(
     ws_pl.append(["Net profit", pl["net_profit"]])
     ws_pl["A" + str(ws_pl.max_row)].font = BOLD
 
-    # ---- Balance sheet ----
     ws_bs = wb.create_sheet("Balance Sheet")
     ws_bs.append(["Balance Sheet"])
     ws_bs["A1"].font = BOLD
     ws_bs.append([])
-    ws_bs.append(["Cash & bank", bs["cash_and_bank"], "(not yet tracked — see schema note)"])
+    ws_bs.append(["Cash & bank", bs["cash_and_bank"], "(not yet tracked in the schema)"])
     ws_bs.append(["Stock value", bs["stock_value"]])
     ws_bs.append(["Receivables", bs["receivables"]])
     ws_bs.append(["Payables", bs["payables"]])
