@@ -63,25 +63,25 @@ async def customer_statement(
     to_date: Optional[date] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        text(
-            """
-            SELECT id, customer_id, invoice_id, payment_id, debit, credit,
-                   description, entry_date, running_balance
-            FROM v_customer_ledger_statement
-            WHERE business_id = :business_id
-              AND customer_id = :customer_id
-              AND (:from_date IS NULL OR entry_date >= :from_date)
-              AND (:to_date IS NULL OR entry_date <= :to_date)
-            ORDER BY entry_date, id
-            """
-        ),
-        {
-            "business_id": str(business_id),
-            "customer_id": str(customer_id),
-            "from_date": from_date,
-            "to_date": to_date,
-        },
-    )
+    # Date conditions are added only when a date is given. A bare
+    # "(:p IS NULL OR col >= :p)" fails under asyncpg because Postgres
+    # cannot infer the type of a NULL parameter.
+    conditions = ["business_id = :business_id", "customer_id = :customer_id"]
+    params = {"business_id": str(business_id), "customer_id": str(customer_id)}
+    if from_date is not None:
+        conditions.append("entry_date >= :from_date")
+        params["from_date"] = from_date
+    if to_date is not None:
+        conditions.append("entry_date <= :to_date")
+        params["to_date"] = to_date
+
+    query = f"""
+        SELECT id, customer_id, invoice_id, payment_id, debit, credit,
+               description, entry_date, running_balance
+        FROM v_customer_ledger_statement
+        WHERE {" AND ".join(conditions)}
+        ORDER BY entry_date, id
+    """
+    result = await db.execute(text(query), params)
     rows = result.mappings().all()
     return [LedgerEntry(**row) for row in rows]
