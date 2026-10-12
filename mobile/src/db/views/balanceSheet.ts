@@ -1,11 +1,14 @@
 /**
- * Local balance sheet calculation, matching the Postgres v_balance_sheet
- * view added by the a1f4c9d02b7e migration. cashAndBank stays 0 until a
- * cash ledger table exists — this is a known gap, not a bug; raise with
- * the team before relying on it in the UI.
+ * Local balance sheet, matching the Postgres v_balance_sheet view.
+ *
+ * KNOWN GAPS (decisions needed from the team):
+ *  - There is no cash/bank table, so cashAndBank is always 0 and the UI shows
+ *    "not tracked yet" instead of a misleading zero.
+ *  - ownersCapital is not real equity. It is stock + receivables - payables.
+ *  - Receivables follow the sign convention in lib/ledger.ts.
  */
-
 import type { SQLiteDatabase } from 'expo-sqlite';
+import { OWED_IS_NEGATIVE } from '../../lib/ledger';
 
 export interface BalanceSheet {
   cashAndBank: number;
@@ -14,6 +17,12 @@ export interface BalanceSheet {
   payables: number;
   ownersCapital: number;
 }
+
+const RECEIVABLES_SQL = OWED_IS_NEGATIVE
+  ? `SELECT SUM(-balance) AS receivables FROM v_customer_balances
+     WHERE business_id = ? AND balance < 0`
+  : `SELECT SUM(balance) AS receivables FROM v_customer_balances
+     WHERE business_id = ? AND balance > 0`;
 
 export async function getBalanceSheet(
   db: SQLiteDatabase,
@@ -25,15 +34,10 @@ export async function getBalanceSheet(
     [businessId]
   );
 
-  const receivablesRow = await db.getFirstAsync<{ receivables: number | null }>(
-    `SELECT SUM(balance) AS receivables
-     FROM v_customer_balances
-     WHERE business_id = ? AND balance > 0`,
-    [businessId]
-  );
+  const receivablesRow = await db.getFirstAsync<{ receivables: number | null }>(RECEIVABLES_SQL, [
+    businessId,
+  ]);
 
-  // schema.ts's CHECK constraint uses uppercase ('UNPAID'); normalize
-  // with UPPER() in case any data ever comes in lowercase from sync.
   const payablesRow = await db.getFirstAsync<{ payables: number | null }>(
     `SELECT SUM(amount) AS payables FROM purchases
      WHERE business_id = ? AND UPPER(payment_status) = 'UNPAID'`,

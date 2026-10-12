@@ -1,66 +1,128 @@
 /**
- * Dashboard — Member 4 scope: analytics summary view over the current
- * business's invoices for a period (defaults to this month).
- *
- * TODO (integration):
- *  - Replace useDb()/useBusinessId() with Member 1's real hooks/context.
- *  - Replace useTranslation() with whatever i18n library is wired up
- *    (e.g. i18next) — this assumes a `t('dashboard.totalSales')` shape.
- *  - Offline indicator should read Member 1's netListener.ts state.
+ * Home. The first thing an owner sees: how this month is going.
+ * The profit figure sits on a ruled khata page; everything else stays quiet.
  */
-
-import React, { useEffect, useState } from 'react';
-import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import React from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-// import { useDb, useBusinessId } from '../../db'; // TODO: wire to Member 1's context
-// import { useIsOffline } from '../../sync/netListener'; // TODO: wire to Member 1's sync layer
+import { colors, space, typo } from '../../theme';
+import { formatINR } from '../../lib/format';
+import { monthRange, monthTitle, thisMonthRef } from '../../lib/periods';
+import { useReport } from '../../hooks/useReport';
+import { getDashboardSummary } from '../../db/views/dashboardSummary';
+import { getProfitAndLoss } from '../../db/views/profitLoss';
+import { getBalanceSheet } from '../../db/views/balanceSheet';
+import { Card, LedgerHero, Meter, NavRow, ReportState, SectionTitle, StatTile } from '../../components/reports/ui';
+import type { ScreenProps } from '../../navigation/types';
 
-interface DashboardSummary {
-  totalSales: number;
-  totalInvoices: number;
-  taxableAmount: number;
-  totalGst: number;
-}
-
-export default function DashboardScreen() {
+export default function DashboardScreen({ navigate }: ScreenProps) {
   const { t } = useTranslation();
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const months = t('months', { returnObjects: true }) as unknown as string[];
+  const ref = thisMonthRef();
+  const range = monthRange(ref);
 
-  useEffect(() => {
-    // TODO: replace with real local query, e.g.:
-    // const db = useDb(); const businessId = useBusinessId();
-    // getDashboardSummary(db, businessId, startOfMonth, today).then(setSummary);
-    setLoading(false);
-  }, []);
-
-  if (loading) return <ActivityIndicator style={styles.center} />;
+  const { state, reload } = useReport(async (db, business) => {
+    const [summary, pl, bs] = await Promise.all([
+      getDashboardSummary(db, business.id, range.from, range.to),
+      getProfitAndLoss(db, business.id, range.from, range.to),
+      getBalanceSheet(db, business.id),
+    ]);
+    return { summary, pl, bs };
+  }, [range.from, range.to]);
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{t('dashboard.title')}</Text>
-      <SummaryCard label={t('dashboard.totalSales')} value={summary?.totalSales ?? 0} />
-      <SummaryCard label={t('dashboard.totalInvoices')} value={summary?.totalInvoices ?? 0} />
-      <SummaryCard label={t('dashboard.taxableAmount')} value={summary?.taxableAmount ?? 0} />
-      <SummaryCard label={t('dashboard.totalGst')} value={summary?.totalGst ?? 0} />
+    <ScrollView contentContainerStyle={s.content}>
+      <ReportState state={state} onRetry={reload}>
+        {({ summary, pl, bs }, business) => {
+          const net = pl.netProfit;
+          const isLoss = net < 0;
+          const scale = Math.max(pl.totalIncome, pl.totalExpense, 1);
+          return (
+            <>
+              <View style={s.greet}>
+                <Text style={[typo.body, { color: colors.inkSoft }]}>{t('dashboard.greeting')}</Text>
+                <Text style={typo.title} numberOfLines={1}>
+                  {business.name}
+                </Text>
+              </View>
+
+              <LedgerHero bad={isLoss}>
+                <Text style={[typo.body, { color: colors.onDarkSoft }]}>
+                  {isLoss ? t('dashboard.lossThisMonth') : t('dashboard.profitThisMonth')}
+                </Text>
+                <Text
+                  style={[typo.display, { color: colors.onDark }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  accessibilityLabel={`${isLoss ? t('dashboard.lossThisMonth') : t('dashboard.profitThisMonth')}: ${formatINR(Math.abs(net))}`}
+                >
+                  {formatINR(Math.abs(net))}
+                </Text>
+                <Text style={[typo.caption, { color: colors.onDarkSoft }]}>{monthTitle(ref, months)}</Text>
+
+                <View style={s.split}>
+                  <SplitLine
+                    label={t('dashboard.sales')}
+                    value={formatINR(pl.totalIncome)}
+                    ratio={pl.totalIncome / scale}
+                  />
+                  <SplitLine
+                    label={t('dashboard.expenses')}
+                    value={formatINR(pl.totalExpense)}
+                    ratio={pl.totalExpense / scale}
+                  />
+                </View>
+              </LedgerHero>
+
+              <View style={s.grid}>
+                <StatTile label={t('dashboard.billsCount')} value={String(summary.totalInvoices)} />
+                <StatTile label={t('dashboard.gstCollected')} value={formatINR(summary.totalGst)} />
+              </View>
+              <View style={s.grid}>
+                <StatTile
+                  label={t('dashboard.customersOweYou')}
+                  value={formatINR(bs.receivables)}
+                  tone={bs.receivables > 0 ? 'warn' : 'ink'}
+                />
+                <StatTile label={t('dashboard.stockValue')} value={formatINR(bs.stockValue)} />
+              </View>
+
+              <SectionTitle>{t('dashboard.moreTitle')}</SectionTitle>
+              <Card style={{ padding: 0, overflow: 'hidden' }}>
+                <NavRow title={t('tabs.reports')} hint={t('dashboard.reportsHint')} onPress={() => navigate('reports')} />
+                <NavRow title={t('tabs.ledger')} hint={t('dashboard.ledgerHint')} onPress={() => navigate('ledger')} />
+                <NavRow title={t('profitLoss.title')} hint={t('dashboard.plHint')} onPress={() => navigate('profitLoss')} />
+                <NavRow
+                  title={t('balanceSheet.title')}
+                  hint={t('dashboard.bsHint')}
+                  onPress={() => navigate('balanceSheet')}
+                />
+                <NavRow title={t('tabs.gstr1')} hint={t('dashboard.gstr1Hint')} onPress={() => navigate('gstr1')} />
+              </Card>
+            </>
+          );
+        }}
+      </ReportState>
+    </ScrollView>
+  );
+}
+
+function SplitLine({ label, value, ratio }: { label: string; value: string; ratio: number }) {
+  return (
+    <View style={{ gap: space.xs }}>
+      <View style={s.splitText}>
+        <Text style={[typo.caption, { color: colors.onDarkSoft }]}>{label}</Text>
+        <Text style={[typo.bodyStrong, typo.money, { color: colors.onDark }]}>{value}</Text>
+      </View>
+      <Meter ratio={ratio} color={colors.turmeric} track="rgba(255,255,255,0.18)" height={6} />
     </View>
   );
 }
 
-function SummaryCard({ label, value }: { label: string; value: number }) {
-  return (
-    <View style={styles.card}>
-      <Text style={styles.cardLabel}>{label}</Text>
-      <Text style={styles.cardValue}>{value}</Text>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  center: { flex: 1, justifyContent: 'center' },
-  title: { fontSize: 22, fontWeight: '700', marginBottom: 16 },
-  card: { backgroundColor: '#f2f4f8', borderRadius: 12, padding: 16, marginBottom: 12 },
-  cardLabel: { fontSize: 13, color: '#555' },
-  cardValue: { fontSize: 24, fontWeight: '700', marginTop: 4 },
+const s = StyleSheet.create({
+  content: { padding: space.xl, paddingBottom: space.huge, gap: space.md },
+  greet: { marginBottom: space.xs },
+  split: { marginTop: space.xl, gap: space.md },
+  splitText: { flexDirection: 'row', justifyContent: 'space-between' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space.md },
 });

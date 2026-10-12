@@ -1,45 +1,68 @@
 /**
- * Balance Sheet (இருப்பு நிலைக் குறிப்பு) — uses getBalanceSheet() from
- * db/views/balanceSheet.ts. cashAndBank is always 0 until a cash ledger
- * table exists — this screen shows a small note rather than hiding that.
- * TODO (integration): wire db/businessId context.
+ * Balance Sheet: what you have, what you owe, and the net position.
+ * Cash and bank are not tracked yet, so that row says so instead of showing
+ * a misleading zero.
  */
-
-import React, { useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import type { BalanceSheet } from '../../db/views/balanceSheet';
+import { colors, radius, space, typo } from '../../theme';
+import { formatINR } from '../../lib/format';
+import { useReport } from '../../hooks/useReport';
+import { getBalanceSheet } from '../../db/views/balanceSheet';
+import { AmountRow, Banner, Card, ReportState, ScreenHeader, SectionTitle } from '../../components/reports/ui';
+import type { ScreenProps } from '../../navigation/types';
 
-export default function BalanceSheetScreen() {
+export default function BalanceSheetScreen({ back, canGoBack }: ScreenProps) {
   const { t } = useTranslation();
-  const [bs] = useState<BalanceSheet | null>(null);
+  const { state, reload } = useReport((db, business) => getBalanceSheet(db, business.id), []);
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{t('balanceSheet.title')}</Text>
-      <Row label={t('balanceSheet.cashAndBank')} value={bs?.cashAndBank ?? 0} />
-      <Text style={styles.note}>Cash/bank tracking not yet implemented in the schema.</Text>
-      <Row label={t('balanceSheet.stockValue')} value={bs?.stockValue ?? 0} />
-      <Row label={t('balanceSheet.receivables')} value={bs?.receivables ?? 0} />
-      <Row label={t('balanceSheet.payables')} value={bs?.payables ?? 0} />
-      <Row label={t('balanceSheet.ownersCapital')} value={bs?.ownersCapital ?? 0} bold />
-    </View>
+    <ScrollView contentContainerStyle={s.content}>
+      <ScreenHeader title={t('balanceSheet.title')} onBack={canGoBack ? back : undefined} />
+      <ReportState state={state} onRetry={reload}>
+        {(bs) => {
+          const negative = bs.ownersCapital < 0;
+          return (
+            <View style={s.body}>
+              <View style={[s.result, { backgroundColor: negative ? colors.brickTint : colors.leafTint }]}>
+                <Text style={[typo.body, { color: negative ? colors.brick : colors.leaf }]}>
+                  {t('balanceSheet.ownersCapital')}
+                </Text>
+                <Text
+                  style={[typo.display, { color: negative ? colors.brick : colors.leaf }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
+                  {formatINR(bs.ownersCapital)}
+                </Text>
+              </View>
+
+              <SectionTitle>{t('balanceSheet.assets')}</SectionTitle>
+              <Card>
+                <AmountRow label={t('balanceSheet.stockValue')} value={formatINR(bs.stockValue)} />
+                <AmountRow label={t('balanceSheet.receivables')} value={formatINR(bs.receivables)} />
+                <AmountRow label={t('balanceSheet.cashAndBank')} value={t('common.notTracked')} tone="faint" />
+              </Card>
+
+              <SectionTitle>{t('balanceSheet.liabilities')}</SectionTitle>
+              <Card>
+                <AmountRow label={t('balanceSheet.payables')} value={formatINR(bs.payables)} />
+              </Card>
+
+              <View style={{ marginTop: space.lg }}>
+                <Banner tone="info" text={t('balanceSheet.note')} />
+              </View>
+            </View>
+          );
+        }}
+      </ReportState>
+    </ScrollView>
   );
 }
 
-function Row({ label, value, bold }: { label: string; value: number; bold?: boolean }) {
-  return (
-    <View style={styles.row}>
-      <Text style={bold && styles.bold}>{label}</Text>
-      <Text style={bold && styles.bold}>{value}</Text>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  title: { fontSize: 22, fontWeight: '700', marginBottom: 16 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderColor: '#eee' },
-  bold: { fontWeight: '700' },
-  note: { fontSize: 11, color: '#999', marginBottom: 8 },
+const s = StyleSheet.create({
+  content: { paddingBottom: space.huge },
+  body: { paddingHorizontal: space.xl },
+  result: { borderRadius: radius.hero, padding: space.xl, gap: space.xs },
 });
