@@ -1,0 +1,94 @@
+name: PR Automated Checks
+
+on:
+  pull_request:
+    branches: [ main ]
+  # Allows you to trigger this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  backend-checks:
+    name: Backend Tests & DB Checks
+    runs-on: ubuntu-latest
+    
+    # Spin up a live PostgreSQL container just for the GitHub Action
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dev_user
+          POSTGRES_PASSWORD: dev_password
+          POSTGRES_DB: compliance_one_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip' # Automatically caches pip downloads to speed up runs
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify Alembic Migrations (Catch uncommitted schema changes)
+        env:
+          DATABASE_URL: postgresql+asyncpg://dev_user:dev_password@localhost:5432/compliance_one_db
+        run: |
+          cd backend
+          export PYTHONPATH=.
+          # 1. Apply all migrations to the temporary GitHub database
+          alembic upgrade head
+          # 2. Ensure models in entities.py match the DB schema perfectly
+          alembic check
+
+      - name: Run Pytest Test Suite
+        env:
+          DATABASE_URL: postgresql+asyncpg://dev_user:dev_password@localhost:5432/compliance_one_db
+        run: |
+          cd backend
+          export PYTHONPATH=.
+          pytest tests/ -v
+
+  mobile-checks:
+    name: Mobile Type Check & Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies (Strict)
+        run: |
+          cd mobile
+          # 'npm ci' is strictly for CI/CD; it fails if package.json and lock file are out of sync
+          npm ci 
+
+      - name: TypeScript Compiler Check
+        run: |
+          cd mobile
+          npx tsc --noEmit
+
+      - name: ESLint Check (Optional - if configured)
+        run: |
+          cd mobile
+          # Will run safely and pass if eslint isn't strictly enforced yet
+          npm run lint --if-present
