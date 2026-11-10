@@ -218,7 +218,7 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
           </Text>
         </View>
         <View style={styles.sellerBadge}>
-          <Text style={styles.sellerState}>{business?.stateName || 'State: 27'}</Text>
+          <Text style={styles.sellerState}>State: {business?.stateCode || '27'}</Text>
         </View>
       </View>
 

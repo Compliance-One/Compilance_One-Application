@@ -71,9 +71,7 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
   });
 
   // Invoice Meta
-  const [invoiceNumber, setInvoiceNumber] = useState<string>(
-    `${business?.invoicePrefix || 'APX-26/'}0148`
-  );
+  const [invoiceNumber, setInvoiceNumber] = useState<string>('APX-26/0148');
   const [invoiceDate, setInvoiceDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
@@ -335,7 +333,7 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
               <Text style={styles.label}>Seller State</Text>
               <View style={styles.disabledInput}>
                 <Text style={styles.disabledText}>
-                  {business?.stateName} ({sellerStateCode})
+                  State Code: {sellerStateCode}
                 </Text>
               </View>
             </View>
