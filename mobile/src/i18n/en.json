@@ -170,7 +170,22 @@
     "proceed": "Continue to invoice",
     "empty": "Add at least one item before continuing.",
     "listening": "Listening…",
-    "processing": "Understanding…"
+    "processing": "Understanding…",
+    "listen": "Start listening",
+    "stop": "Stop",
+    "cancel": "Cancel",
+    "onDevice": "On-device speech recognition",
+    "platformStt": "Device speech recognition (may use the network if an offline model is unavailable)",
+    "mockMode": "Mock speech mode is on (EXPO_PUBLIC_MOCK_STT=1). Turn this off to use the real microphone.",
+    "customer": "Customer",
+    "customerName": "Customer name",
+    "transcript": "What you said",
+    "transcriptHint": "Speak a bill, or type the transcript here.",
+    "editHint": "You can edit the transcript and the line items before continuing.",
+    "items": "Line items",
+    "taxable": "Taxable",
+    "tax": "GST",
+    "total": "Total"
   },
   "invoiceCreate": {
     "title": "New Tax Invoice",
@@ -181,7 +196,9 @@
     "missingCustomer": "Please specify a customer name.",
     "noItems": "Please add at least one line item.",
     "invalidGstin": "Enter a valid 15-character GSTIN, or leave it blank.",
-    "missingBusiness": "No active business on this device."
+    "missingBusiness": "No active business on this device.",
+    "sharePdf": "Share PDF",
+    "print": "Print"
   },
   "customers": {
     "title": "Customers",
@@ -192,5 +209,17 @@
   },
   "inventory": {
     "title": "Inventory"
+  },
+  "printer": {
+    "title": "Receipt printer",
+    "hint": "Scan and select a Bluetooth ESC/POS printer (58mm or 80mm). This needs a development build, not Expo Go.",
+    "scan": "Scan for printers",
+    "scanning": "Scanning…",
+    "noneFound": "No printers were found. Pair the printer in system settings, then scan again.",
+    "noneSelected": "No printer selected yet",
+    "test": "Print test receipt",
+    "printing": "Printing…",
+    "testSent": "Test receipt sent to the printer.",
+    "clear": "Forget this printer"
   }
 }
