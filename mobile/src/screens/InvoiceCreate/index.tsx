@@ -16,6 +16,7 @@ import { getDb } from '../../db/schema';
 import { createInvoice, nextInvoiceNumber } from '../../db/repositories';
 import { localISODate } from '../../lib/dates';
 import { formatINR } from '../../lib/format';
+import { alertActionError, printInvoiceById, shareInvoicePdfById } from '../../billing/invoiceActions';
 import {
   INDIAN_STATES,
   calculateGst,
@@ -79,9 +80,9 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
   const [invoiceNumber, setInvoiceNumber] = useState<string>('');
   const [invoiceDate, setInvoiceDate] = useState<string>(localISODate());
   const [saving, setSaving] = useState(false);
-  const [paymentTerms, setPaymentTerms] = useState<string>('Net 15 Days');
+  const [paymentTerms, setPaymentTerms] = useState<string>(t('invoiceCreate.terms'));
   const [notes, setNotes] = useState<string>(
-    'Thank you for your business. Subject to Mumbai Jurisdiction.'
+    t('invoiceCreate.notes')
   );
 
   // Line items
@@ -224,11 +225,11 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
 
   const handleSaveModalItem = () => {
     if (!editingItem.name.trim()) {
-      Alert.alert('Validation Error', 'Item name is required.');
+      Alert.alert(t('invoiceCreate.validationTitle'), t('invoiceCreate.itemNameRequired'));
       return;
     }
     if (editingItem.unitPrice <= 0) {
-      Alert.alert('Validation Error', 'Unit price must be greater than 0.');
+      Alert.alert(t('invoiceCreate.validationTitle'), t('invoiceCreate.unitPriceRequired'));
       return;
     }
 
@@ -278,7 +279,7 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
     setSaving(true);
     try {
       const db = await getDb();
-      await createInvoice(db, {
+      const invoiceId = await createInvoice(db, {
         businessId: business.id,
         sellerStateCode,
         buyerStateCode: customer.stateCode,
@@ -313,10 +314,18 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
             text: t('invoiceCreate.viewInvoices'),
             onPress: () => navigation?.navigate && navigation.navigate('MainTabs', { screen: 'Invoices' }),
           },
+          {
+            text: t('invoiceCreate.sharePdf'),
+            onPress: () => void shareInvoicePdfById(invoiceId).catch((err) => alertActionError(err, 'PDF')),
+          },
+          {
+            text: t('invoiceCreate.print'),
+            onPress: () => void printInvoiceById(invoiceId).catch((err) => alertActionError(err, 'Print')),
+          },
         ]
       );
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : String(e));
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
@@ -328,20 +337,20 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>{t('invoiceCreate.title')}</Text>
-          <Text style={styles.subTitle}>GST Compliance Rule 46 Format</Text>
+          <Text style={styles.subTitle}>{t('invoiceCreate.subtitle')}</Text>
         </View>
-        <TouchableOpacity style={styles.saveDraftBtn} onPress={() => Alert.alert('Draft Saved')}>
-          <Text style={styles.saveDraftText}>Save Draft</Text>
+        <TouchableOpacity style={styles.saveDraftBtn} onPress={() => Alert.alert(t('invoiceCreate.draftSaved'))}>
+          <Text style={styles.saveDraftText}>{t('invoiceCreate.saveDraft')}</Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
         {/* Invoice Meta */}
         <View style={styles.card}>
-          <Text style={styles.sectionHeading}>Invoice Metadata</Text>
+          <Text style={styles.sectionHeading}>{t('invoiceCreate.metadata')}</Text>
           <View style={styles.row}>
             <View style={{ flex: 1, marginRight: 8 }}>
-              <Text style={styles.label}>Invoice Number</Text>
+              <Text style={styles.label}>{t('invoiceCreate.invoiceNumber')}</Text>
               <TextInput
                 style={styles.input}
                 value={invoiceNumber}
@@ -349,18 +358,18 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
               />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Invoice Date</Text>
+              <Text style={styles.label}>{t('invoiceCreate.invoiceDate')}</Text>
               <TextInput
                 style={styles.input}
                 value={invoiceDate}
                 onChangeText={setInvoiceDate}
-                placeholder="YYYY-MM-DD"
+                placeholder={t('invoiceCreate.datePlaceholder')}
               />
             </View>
           </View>
           <View style={[styles.row, { marginTop: 8 }]}>
             <View style={{ flex: 1, marginRight: 8 }}>
-              <Text style={styles.label}>Payment Terms</Text>
+              <Text style={styles.label}>{t('invoiceCreate.paymentTerms')}</Text>
               <TextInput
                 style={styles.input}
                 value={paymentTerms}
@@ -368,7 +377,7 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
               />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Seller State</Text>
+              <Text style={styles.label}>{t('invoiceCreate.sellerState')}</Text>
               <View style={styles.disabledInput}>
                 <Text style={styles.disabledText}>
                   State Code: {sellerStateCode}
@@ -380,24 +389,24 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
 
         {/* Customer / Buyer Details */}
         <View style={styles.card}>
-          <Text style={styles.sectionHeading}>Bill To (Customer Details)</Text>
+          <Text style={styles.sectionHeading}>{t('invoiceCreate.billTo')}</Text>
           <View style={styles.row}>
             <View style={{ flex: 1.5, marginRight: 8 }}>
-              <Text style={styles.label}>Customer Legal Name</Text>
+              <Text style={styles.label}>{t('invoiceCreate.customerLegalName')}</Text>
               <TextInput
                 style={styles.input}
                 value={customer.name}
                 onChangeText={(val) => setCustomer({ ...customer, name: val })}
-                placeholder="Buyer Business Name"
+                placeholder={t('invoiceCreate.buyerName')}
               />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.label}>GSTIN</Text>
+              <Text style={styles.label}>{t('invoiceCreate.gstin')}</Text>
               <TextInput
                 style={styles.input}
                 value={customer.gstin}
                 onChangeText={handleGstinChange}
-                placeholder="27..."
+                placeholder={t('invoiceCreate.gstinPlaceholder')}
                 autoCapitalize="characters"
               />
             </View>
@@ -405,7 +414,7 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
 
           <View style={[styles.row, { marginTop: 8 }]}>
             <View style={{ flex: 1, marginRight: 8 }}>
-              <Text style={styles.label}>Place of Supply (State)</Text>
+              <Text style={styles.label}>{t('invoiceCreate.placeOfSupply')}</Text>
               <TextInput
                 style={styles.input}
                 value={`${customer.stateName} (${customer.stateCode})`}
@@ -416,7 +425,7 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
               />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Tax Type</Text>
+              <Text style={styles.label}>{t('invoiceCreate.taxType')}</Text>
               <View
                 style={[
                   styles.taxTypeBadge,
@@ -429,14 +438,14 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
                     isInterState ? styles.textIgst : styles.textCgst,
                   ]}
                 >
-                  {isInterState ? 'INTER-STATE (IGST)' : 'INTRA-STATE (CGST + SGST)'}
+                  {isInterState ? t('invoiceCreate.interState') : t('invoiceCreate.intraState')}
                 </Text>
               </View>
             </View>
           </View>
 
           <View style={{ marginTop: 8 }}>
-            <Text style={styles.label}>Billing Address</Text>
+            <Text style={styles.label}>{t('invoiceCreate.billingAddress')}</Text>
             <TextInput
               style={[styles.input, { height: 44 }]}
               value={customer.billingAddress}
@@ -470,13 +479,13 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
                 </Text>
                 <View style={styles.itemActionGroup}>
                   <TouchableOpacity onPress={() => handleEditItem(item)}>
-                    <Text style={styles.editActionText}>Edit</Text>
+                    <Text style={styles.editActionText}>{t('invoiceCreate.edit')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => handleDeleteItem(item.id)}
                     style={{ marginLeft: 12 }}
                   >
-                    <Text style={styles.deleteActionText}>Delete</Text>
+                    <Text style={styles.deleteActionText}>{t('invoiceCreate.delete')}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -508,40 +517,40 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
 
         {/* GST Calculation & Summary Card */}
         <View style={styles.summaryCard}>
-          <Text style={styles.sectionHeading}>Tax Breakdown & Totals</Text>
+          <Text style={styles.sectionHeading}>{t('invoiceCreate.taxBreakdown')}</Text>
 
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Total Taxable Amount</Text>
+            <Text style={styles.summaryLabel}>{t('invoiceCreate.totalTaxable')}</Text>
             <Text style={styles.summaryValue}>₹{taxableSubtotal.toFixed(2)}</Text>
           </View>
 
           {!isInterState ? (
             <>
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Central GST (CGST)</Text>
+                <Text style={styles.summaryLabel}>{t('invoiceCreate.cgst')}</Text>
                 <Text style={styles.summaryValue}>₹{totalCgst.toFixed(2)}</Text>
               </View>
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>State GST (SGST)</Text>
+                <Text style={styles.summaryLabel}>{t('invoiceCreate.sgst')}</Text>
                 <Text style={styles.summaryValue}>₹{totalSgst.toFixed(2)}</Text>
               </View>
             </>
           ) : (
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Integrated GST (IGST)</Text>
+              <Text style={styles.summaryLabel}>{t('invoiceCreate.igst')}</Text>
               <Text style={styles.summaryValue}>₹{totalIgst.toFixed(2)}</Text>
             </View>
           )}
 
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Round Off</Text>
+            <Text style={styles.summaryLabel}>{t('invoiceCreate.roundOff')}</Text>
             <Text style={styles.summaryValue}>
               {roundOff >= 0 ? `+₹${roundOff.toFixed(2)}` : `-₹${Math.abs(roundOff).toFixed(2)}`}
             </Text>
           </View>
 
           <View style={[styles.summaryRow, styles.grandTotalRow]}>
-            <Text style={styles.grandTotalLabel}>Grand Total (INR)</Text>
+            <Text style={styles.grandTotalLabel}>{t('invoiceCreate.grandTotal')}</Text>
             <Text style={styles.grandTotalValue}>
               ₹{roundedGrandTotal.toLocaleString('en-IN')}.00
             </Text>
@@ -550,7 +559,7 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
 
         {/* Notes & Terms */}
         <View style={styles.card}>
-          <Text style={styles.sectionHeading}>Notes & Declaration</Text>
+          <Text style={styles.sectionHeading}>{t('invoiceCreate.notesTitle')}</Text>
           <TextInput
             style={[styles.input, { height: 60 }]}
             value={notes}
@@ -563,7 +572,7 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
       {/* Floating Bottom Bar */}
       <View style={styles.bottomBar}>
         <View style={styles.bottomTotalBox}>
-          <Text style={styles.bottomTotalLabel}>Total Amount</Text>
+          <Text style={styles.bottomTotalLabel}>{t('invoiceCreate.totalAmount')}</Text>
           <Text style={styles.bottomTotalNumber}>{formatINR(roundedGrandTotal)}</Text>
         </View>
         <TouchableOpacity
@@ -587,51 +596,51 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>
               {editingItem.id && items.some((i) => i.id === editingItem.id)
-                ? 'Edit Line Item'
-                : 'Add Line Item'}
+                ? t('invoiceCreate.editItem')
+                : t('invoiceCreate.addItem')}
             </Text>
 
             <ScrollView>
-              <Text style={styles.label}>Product / Item Name *</Text>
+              <Text style={styles.label}>{t('invoiceCreate.itemNameLabel')}</Text>
               <TextInput
                 style={styles.input}
                 value={editingItem.name}
                 onChangeText={(val) =>
                   setEditingItem({ ...editingItem, name: val })
                 }
-                placeholder="e.g. Copper Wire Coil"
+                placeholder={t('invoiceCreate.itemNamePlaceholder')}
               />
 
               <View style={[styles.row, { marginTop: 10 }]}>
                 <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.label}>HSN / SAC Code</Text>
+                  <Text style={styles.label}>{t('invoiceCreate.hsnLabel')}</Text>
                   <TextInput
                     style={styles.input}
                     value={editingItem.hsnCode}
                     onChangeText={(val) =>
                       setEditingItem({ ...editingItem, hsnCode: val })
                     }
-                    placeholder="e.g. 7408"
+                    placeholder={t('invoiceCreate.hsnPlaceholder')}
                     keyboardType="numeric"
                   />
                 </View>
 
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Unit</Text>
+                  <Text style={styles.label}>{t('invoiceCreate.unitLabel')}</Text>
                   <TextInput
                     style={styles.input}
                     value={editingItem.unit}
                     onChangeText={(val) =>
                       setEditingItem({ ...editingItem, unit: val.toUpperCase() })
                     }
-                    placeholder="PCS, BOX, KG"
+                    placeholder={t('invoiceCreate.unitPlaceholder')}
                   />
                 </View>
               </View>
 
               <View style={[styles.row, { marginTop: 10 }]}>
                 <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.label}>Quantity *</Text>
+                  <Text style={styles.label}>{t('invoiceCreate.qtyLabel')}</Text>
                   <TextInput
                     style={styles.input}
                     value={editingItem.quantity.toString()}
@@ -646,7 +655,7 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
                 </View>
 
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Unit Price (₹) *</Text>
+                  <Text style={styles.label}>{t('invoiceCreate.unitPriceLabel')}</Text>
                   <TextInput
                     style={styles.input}
                     value={editingItem.unitPrice.toString()}
@@ -663,7 +672,7 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
 
               <View style={[styles.row, { marginTop: 10 }]}>
                 <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.label}>Discount %</Text>
+                  <Text style={styles.label}>{t('invoiceCreate.discountLabel')}</Text>
                   <TextInput
                     style={styles.input}
                     value={editingItem.discountPercent.toString()}
@@ -678,7 +687,7 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
                 </View>
 
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>GST Rate %</Text>
+                  <Text style={styles.label}>{t('invoiceCreate.gstRateLabel')}</Text>
                   <View style={styles.taxPillRow}>
                     {TAX_RATES.map((rate) => (
                       <TouchableOpacity
@@ -712,13 +721,13 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
                 style={styles.modalCancelBtn}
                 onPress={() => setIsItemModalVisible(false)}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={styles.modalCancelText}>{t('invoiceCreate.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.modalSaveBtn}
                 onPress={handleSaveModalItem}
               >
-                <Text style={styles.modalSaveText}>Save Item</Text>
+                <Text style={styles.modalSaveText}>{t('invoiceCreate.saveItem')}</Text>
               </TouchableOpacity>
             </View>
           </View>

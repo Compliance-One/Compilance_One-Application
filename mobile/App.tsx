@@ -5,12 +5,15 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { bootstrapApp } from './src/bootstrap/appBootstrap';
 import RootNavigator from './src/navigation/RootNavigator';
+import AuthNavigator from './src/navigation/AuthNavigator';
+import { useAppStore } from './src/store/useAppStore';
 import './src/i18n';
 import { colors, typo } from './src/theme';
 
 export default function App() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isAuthenticated = useAppStore((s) => s.isAuthenticated);
 
   useEffect(() => {
     let cleanup: (() => void) | undefined;
@@ -41,8 +44,10 @@ export default function App() {
               <ActivityIndicator size="large" color={colors.leaf} />
             )}
           </View>
-        ) : (
+        ) : isAuthenticated ? (
           <RootNavigator />
+        ) : (
+          <AuthNavigator />
         )}
       </SafeAreaProvider>
     </GestureHandlerRootView>

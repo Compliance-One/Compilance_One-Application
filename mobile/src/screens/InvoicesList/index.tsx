@@ -17,15 +17,16 @@ import { getDb } from '../../db/schema';
 import { listInvoices } from '../../db/repositories';
 import { displayPaymentStatus } from '../../lib/paymentStatus';
 import { localISODate } from '../../lib/dates';
+import { alertActionError, printInvoiceById, shareInvoicePdfById } from '../../billing/invoiceActions';
 
 
-const FILTER_TABS: { label: string; value: 'ALL' | InvoiceStatus }[] = [
-  { label: 'All', value: 'ALL' },
-  { label: 'Unpaid', value: 'UNPAID' },
-  { label: 'Partial', value: 'PARTIAL' },
-  { label: 'Paid', value: 'PAID' },
-  { label: 'Overdue', value: 'OVERDUE' },
-  { label: 'Cancelled', value: 'CANCELLED' },
+const FILTER_TABS: { labelKey: 'invoices.all' | 'invoices.unpaid' | 'invoices.partial' | 'invoices.paid' | 'invoices.overdue' | 'invoices.cancelled'; value: 'ALL' | InvoiceStatus }[] = [
+  { labelKey: 'invoices.all', value: 'ALL' },
+  { labelKey: 'invoices.unpaid', value: 'UNPAID' },
+  { labelKey: 'invoices.partial', value: 'PARTIAL' },
+  { labelKey: 'invoices.paid', value: 'PAID' },
+  { labelKey: 'invoices.overdue', value: 'OVERDUE' },
+  { labelKey: 'invoices.cancelled', value: 'CANCELLED' },
 ];
 
 export const InvoicesListScreen: React.FC<{ navigation?: any }> = ({
@@ -109,18 +110,24 @@ export const InvoicesListScreen: React.FC<{ navigation?: any }> = ({
   const handleInvoicePress = (invoice: InvoiceCardData) => {
     Alert.alert(
       invoice.invoiceNumber,
-      `Customer: ${invoice.customerName}\nAmount: ${formatINR(
-        invoice.totalAmount
-      )}\nStatus: ${invoice.status}`
+      t('invoices.detailBody', {
+        name: invoice.customerName,
+        amount: formatINR(invoice.totalAmount),
+        status: invoice.status,
+      })
     );
   };
 
   const handleDownload = (invoice: InvoiceCardData) => {
-    Alert.alert('Download Started', `Downloading PDF for ${invoice.invoiceNumber}`);
+    void shareInvoicePdfById(invoice.id).catch((err) => alertActionError(err, t('pdf.taxInvoice')));
   };
 
   const handleShare = (invoice: InvoiceCardData) => {
-    Alert.alert('Share Invoice', `Sharing ${invoice.invoiceNumber} via WhatsApp / Email`);
+    void shareInvoicePdfById(invoice.id).catch((err) => alertActionError(err, t('invoices.sharePdf')));
+  };
+
+  const handlePrint = (invoice: InvoiceCardData) => {
+    void printInvoiceById(invoice.id).catch((err) => alertActionError(err, t('invoices.print')));
   };
 
   return (
@@ -129,7 +136,7 @@ export const InvoicesListScreen: React.FC<{ navigation?: any }> = ({
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>{t('tabs.invoices')}</Text>
-          <Text style={styles.subTitle}>Sales & Compliance Invoices</Text>
+          <Text style={styles.subTitle}>{t('invoices.subtitle')}</Text>
         </View>
 
         <View style={styles.topActions}>
@@ -152,12 +159,12 @@ export const InvoicesListScreen: React.FC<{ navigation?: any }> = ({
       {/* KPI Stats Bar */}
       <View style={styles.kpiContainer}>
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiLabel}>Total Sales</Text>
+          <Text style={styles.kpiLabel}>{t('invoices.totalSales')}</Text>
           <Text style={styles.kpiValue}>{formatINR(totalSales)}</Text>
         </View>
         <View style={styles.kpiDivider} />
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiLabel}>Outstanding ({pendingCount})</Text>
+          <Text style={styles.kpiLabel}>{t('invoices.outstanding', { count: pendingCount })}</Text>
           <Text style={[styles.kpiValue, styles.kpiOutstanding]}>
             {formatINR(totalPending)}
           </Text>
@@ -200,7 +207,7 @@ export const InvoicesListScreen: React.FC<{ navigation?: any }> = ({
                 activeFilter === tab.value && styles.activeFilterTabText,
               ]}
             >
-              {tab.label}
+              {t(tab.labelKey)}
             </Text>
           </TouchableOpacity>
         ))}
@@ -216,6 +223,7 @@ export const InvoicesListScreen: React.FC<{ navigation?: any }> = ({
             onPress={handleInvoicePress}
             onDownload={handleDownload}
             onShare={handleShare}
+            onPrint={handlePrint}
           />
         )}
         contentContainerStyle={styles.listContent}
@@ -225,11 +233,11 @@ export const InvoicesListScreen: React.FC<{ navigation?: any }> = ({
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>📄</Text>
-            <Text style={styles.emptyTitle}>No Invoices Found</Text>
+            <Text style={styles.emptyTitle}>{t('invoices.emptyTitle')}</Text>
             <Text style={styles.emptySub}>
               {searchQuery
-                ? 'Try a different search keyword'
-                : 'Create your first invoice by tapping + New or Voice Bill'}
+                ? t('invoices.emptySearch')
+                : t('invoices.emptyHint')}
             </Text>
           </View>
         }

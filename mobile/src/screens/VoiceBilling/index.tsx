@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,11 +10,16 @@ import {
   Animated,
   Alert,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../store/useAppStore';
 import { CONFIG } from '../../config/env';
+import { getDb } from '../../db/schema';
+import { listCustomers, listProducts } from '../../db/repositories';
 import { formatINR } from '../../lib/format';
 import { calculateInvoiceTotals, normalizeStateCode, stateCodeFromGstin } from '../../lib/gst';
+import { parseTranscript, type CatalogCustomer, type CatalogProduct, type ParsedVoiceItem } from '../../voice/parseTranscript';
+import { useSpeechToText, type SpeechLocale } from '../../voice/useSpeechToText';
 
 export interface ParsedItem {
   id: string;
@@ -22,167 +27,120 @@ export interface ParsedItem {
   quantity: number;
   unit: string;
   unitPrice: number;
-  taxRate: number; // e.g. 18 for 18%
+  taxRate: number;
   hsnCode?: string;
+  productId?: string;
   total: number;
 }
 
-type RecordingState = 'IDLE' | 'LISTENING' | 'PROCESSING' | 'PARSED';
+function localeFromApp(voiceLanguage?: string | null, i18nLang?: string): SpeechLocale {
+  const raw = (voiceLanguage || i18nLang || 'en').toLowerCase();
+  return raw.startsWith('ta') ? 'ta-IN' : 'en-IN';
+}
 
-const SAMPLE_VOICE_COMMANDS = [
-  '5 bags UltraTech Cement at 380 each with 28 percent GST',
-  '12 pieces Havells 10A Switch at 140 each',
-  '2 cans Berger Enamel Paint 4L at 850',
-];
+function itemsFromParsed(parsed: ParsedVoiceItem[]): ParsedItem[] {
+  return parsed.map((it, idx) => ({
+    id: it.productId || `voice_${idx}_${it.name}`,
+    name: it.name,
+    quantity: it.quantity,
+    unit: it.unit,
+    unitPrice: it.unitPrice ?? 0,
+    taxRate: it.taxRate ?? 18,
+    hsnCode: it.hsnCode,
+    productId: it.productId,
+    total: (it.unitPrice ?? 0) * it.quantity,
+  }));
+}
 
-export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = ({
-  navigation,
-}) => {
-  const { t } = useTranslation();
+export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = ({ navigation }) => {
+  const { t, i18n } = useTranslation();
   const { business } = useAppStore();
   const sellerStateCode = business?.stateCode || CONFIG.DEFAULT_STATE_CODE;
-  const [recordingState, setRecordingState] = useState<RecordingState>('IDLE');
-  const [transcript, setTranscript] = useState<string>('');
-  const [customerName, setCustomerName] = useState<string>('');
-  const [customerGstin, setCustomerGstin] = useState<string>('');
-  const [parsedItems, setParsedItems] = useState<ParsedItem[]>([]);
-  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const [lang, setLang] = useState<SpeechLocale>(() => localeFromApp(undefined, i18n.language));
+  const speech = useSpeechToText(lang);
 
-  // Pulse animation for recording state
+  const [customerName, setCustomerName] = useState('');
+  const [customerGstin, setCustomerGstin] = useState('');
+  const [customerId, setCustomerId] = useState<string | undefined>();
+  const [parsedItems, setParsedItems] = useState<ParsedItem[]>([]);
+  const [products, setProducts] = useState<CatalogProduct[]>([]);
+  const [customers, setCustomers] = useState<CatalogCustomer[]>([]);
+  const [editedTranscript, setEditedTranscript] = useState('');
+
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!business?.id) return;
+      void (async () => {
+        const db = await getDb();
+        const [prods, custs] = await Promise.all([listProducts(db, business.id), listCustomers(db, business.id)]);
+        setProducts(prods);
+        setCustomers(custs);
+      })();
+    }, [business?.id])
+  );
 
   useEffect(() => {
     let pulseLoop: Animated.CompositeAnimation | null = null;
-    if (recordingState === 'LISTENING') {
+    if (speech.state === 'listening') {
       pulseLoop = Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.25,
-            duration: 650,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 650,
-            useNativeDriver: true,
-          }),
+          Animated.timing(pulseAnim, { toValue: 1.25, duration: 650, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 650, useNativeDriver: true }),
         ])
       );
       pulseLoop.start();
     } else {
       pulseAnim.setValue(1);
     }
-
     return () => {
       pulseLoop?.stop();
     };
-  }, [recordingState, pulseAnim]);
+  }, [speech.state, pulseAnim]);
+
+  const applyTranscript = useCallback(
+    (text: string) => {
+      if (!text.trim()) return;
+      const bill = parseTranscript(text, { products, customers });
+      if (bill.customerName) {
+        setCustomerName(bill.customerName);
+        setCustomerId(bill.customer?.id);
+        if (bill.customer?.gstin) setCustomerGstin(bill.customer.gstin);
+      }
+      if (bill.items.length) setParsedItems(itemsFromParsed(bill.items));
+    },
+    [products, customers]
+  );
 
   useEffect(() => {
-    return () => {
-      timersRef.current.forEach(clearTimeout);
-      timersRef.current = [];
-    };
-  }, []);
+    if (speech.display) setEditedTranscript(speech.display);
+    if (speech.transcript) applyTranscript(speech.transcript);
+  }, [speech.display, speech.transcript, applyTranscript]);
 
-  const later = (fn: () => void, ms: number) => {
-    const id = setTimeout(fn, ms);
-    timersRef.current.push(id);
-    return id;
-  };
-
-  const handleToggleRecord = () => {
-    if (recordingState === 'IDLE' || recordingState === 'PARSED') {
-      timersRef.current.forEach(clearTimeout);
-      timersRef.current = [];
-      setRecordingState('LISTENING');
-      setTranscript('Listening... Speak your bill items clearly.');
-
-      // Simulate live recognition delay
-      later(() => {
-        setTranscript(
-          'Add 10 cans Berger Interior Emulsion at 920 each and 4 boxes dry screws at 150'
-        );
-      }, 2200);
-
-      // Simulate automatic processing after 4.5 seconds
-      later(() => {
-        setRecordingState('PROCESSING');
-        later(() => {
-          // Append mock parsed results
-          const newItems: ParsedItem[] = [
-            ...parsedItems,
-            {
-              id: `item_${Date.now()}_1`,
-              name: 'Berger Interior Emulsion (4L)',
-              quantity: 10,
-              unit: 'CAN',
-              unitPrice: 920,
-              taxRate: 18,
-              hsnCode: '320910',
-              total: 10 * 920 * 1.18,
-            },
-            {
-              id: `item_${Date.now()}_2`,
-              name: 'Drywall Screws (Box of 500)',
-              quantity: 4,
-              unit: 'BOX',
-              unitPrice: 150,
-              taxRate: 18,
-              hsnCode: '731815',
-              total: 4 * 150 * 1.18,
-            },
-          ];
-          setParsedItems(newItems);
-          setRecordingState('PARSED');
-        }, 1500);
-      }, 4500);
-    } else if (recordingState === 'LISTENING') {
-      setRecordingState('PROCESSING');
-      later(() => {
-        setRecordingState('PARSED');
-      }, 1000);
-    }
-  };
-
-  const handleUpdateItem = (
-    id: string,
-    field: 'quantity' | 'unitPrice' | 'taxRate' | 'name',
-    value: string
-  ) => {
+  const handleUpdateItem = (id: string, field: 'quantity' | 'unitPrice' | 'taxRate' | 'name', value: string) => {
     setParsedItems((prev) =>
       prev.map((item) => {
         if (item.id !== id) return item;
-
-        let numVal = parseFloat(value) || 0;
-        let updated = { ...item };
-
-        if (field === 'quantity') updated.quantity = numVal;
-        if (field === 'unitPrice') updated.unitPrice = numVal;
-        if (field === 'taxRate') updated.taxRate = numVal;
+        const updated = { ...item };
+        if (field === 'quantity') updated.quantity = parseFloat(value) || 0;
+        if (field === 'unitPrice') updated.unitPrice = parseFloat(value) || 0;
+        if (field === 'taxRate') updated.taxRate = parseFloat(value) || 0;
         if (field === 'name') updated.name = value;
-
-        const subtotal = updated.quantity * updated.unitPrice;
-        const tax = subtotal * (updated.taxRate / 100);
-        updated.total = subtotal + tax;
-
+        updated.total = updated.quantity * updated.unitPrice;
         return updated;
       })
     );
   };
 
-  const handleRemoveItem = (id: string) => {
-    setParsedItems((prev) => prev.filter((item) => item.id !== id));
-  };
-
   const buyerStateCode =
-    stateCodeFromGstin(customerGstin) || normalizeStateCode(sellerStateCode) || CONFIG.DEFAULT_STATE_CODE;
+    stateCodeFromGstin(customerGstin) ||
+    (customers.find((c) => c.id === customerId)?.stateCode ?? '') ||
+    normalizeStateCode(sellerStateCode) ||
+    CONFIG.DEFAULT_STATE_CODE;
+
   const gstSummary = calculateInvoiceTotals(
-    parsedItems.map((it) => ({
-      unitPrice: it.unitPrice,
-      quantity: it.quantity,
-      taxRate: it.taxRate,
-    })),
+    parsedItems.map((it) => ({ unitPrice: it.unitPrice, quantity: it.quantity, taxRate: it.taxRate })),
     sellerStateCode,
     buyerStateCode
   );
@@ -192,36 +150,27 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
       Alert.alert(t('voiceBilling.empty'));
       return;
     }
-
-    if (navigation?.navigate) {
-      navigation.navigate('InvoiceCreate', {
-        initialCustomer: {
-          name: customerName,
-          gstin: customerGstin,
-          stateCode: buyerStateCode,
-        },
-        initialItems: parsedItems,
-        inputMode: 'voice',
-      });
-    } else {
-      Alert.alert(
-        t('voiceBilling.title'),
-        t('invoiceCreate.createdBody', {
-          number: '—',
-          amount: formatINR(gstSummary.summary.grandTotal),
-        })
-      );
-    }
+    navigation?.navigate?.('InvoiceCreate', {
+      initialCustomer: {
+        id: customerId,
+        name: customerName,
+        gstin: customerGstin,
+        stateCode: buyerStateCode,
+      },
+      initialItems: parsedItems,
+      inputMode: 'voice',
+    });
   };
+
+  const listening = speech.state === 'listening' || speech.state === 'requesting';
 
   return (
     <View style={styles.container}>
-      {/* Header Bar */}
       <View style={styles.topBar}>
         <View>
           <Text style={styles.screenTitle}>{t('voiceBilling.title')}</Text>
           <Text style={styles.screenSub}>
-            Speak in Hindi, English, or Hinglish to parse line items
+            {speech.onDevice ? t('voiceBilling.onDevice') : t('voiceBilling.platformStt')}
           </Text>
         </View>
         <View style={styles.sellerBadge}>
@@ -230,229 +179,143 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
-        {/* Customer Quick Selector */}
+        {speech.mocked ? (
+          <View style={styles.mockBanner}>
+            <Text style={styles.mockText}>{t('voiceBilling.mockMode')}</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.langRow}>
+          {(['en-IN', 'ta-IN'] as SpeechLocale[]).map((code) => {
+            const on = lang === code;
+            return (
+              <TouchableOpacity
+                key={code}
+                style={[styles.langChip, on && styles.langChipOn]}
+                onPress={() => setLang(code)}
+              >
+                <Text style={[styles.langChipText, on && styles.langChipTextOn]}>
+                  {code === 'ta-IN' ? t('settings.tamil') : t('settings.english')} ({code})
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Customer Details</Text>
+          <Text style={styles.sectionTitle}>{t('voiceBilling.customer')}</Text>
           <View style={styles.inputRow}>
-            <View style={{ flex: 1, marginRight: 8 }}>
-              <Text style={styles.inputLabel}>Customer / Party Name</Text>
-              <TextInput
-                style={styles.textInput}
-                value={customerName}
-                onChangeText={setCustomerName}
-                placeholder="Enter Customer Name"
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.inputLabel}>GSTIN (Optional)</Text>
-              <TextInput
-                style={styles.textInput}
-                value={customerGstin}
-                onChangeText={setCustomerGstin}
-                placeholder="e.g. 27AABCA..."
-                autoCapitalize="characters"
-              />
-            </View>
+            <TextInput
+              style={[styles.input, { flex: 1, marginRight: 8 }]}
+              placeholder={t('voiceBilling.customerName')}
+              value={customerName}
+              onChangeText={(v) => {
+                setCustomerName(v);
+                setCustomerId(undefined);
+              }}
+            />
+            <TextInput
+              style={[styles.input, { flex: 1 }]}
+              placeholder="GSTIN"
+              autoCapitalize="characters"
+              value={customerGstin}
+              onChangeText={setCustomerGstin}
+            />
           </View>
         </View>
 
-        {/* Microphone Section */}
-        <View style={styles.voiceSection}>
-          <Animated.View
-            style={[
-              styles.micRing,
-              {
-                transform: [{ scale: pulseAnim }],
-                borderColor:
-                  recordingState === 'LISTENING'
-                    ? '#EF4444'
-                    : recordingState === 'PROCESSING'
-                    ? '#3B82F6'
-                    : '#E5E7EB',
-                backgroundColor:
-                  recordingState === 'LISTENING'
-                    ? '#FEE2E2'
-                    : recordingState === 'PROCESSING'
-                    ? '#DBEAFE'
-                    : '#F9FAFB',
-              },
-            ]}
-          >
-            <TouchableOpacity
-              style={[
-                styles.micButton,
-                {
-                  backgroundColor:
-                    recordingState === 'LISTENING'
-                      ? '#DC2626'
-                      : recordingState === 'PROCESSING'
-                      ? '#2563EB'
-                      : '#1E293B',
-                },
-              ]}
-              onPress={handleToggleRecord}
-              activeOpacity={0.8}
-            >
-              {recordingState === 'PROCESSING' ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.micIconText}>
-                  {recordingState === 'LISTENING' ? '⏹' : '🎤'}
-                </Text>
-              )}
-            </TouchableOpacity>
-          </Animated.View>
-
-          <Text style={styles.recordStateText}>
-            {recordingState === 'IDLE' && 'Tap mic to start speaking items'}
-            {recordingState === 'LISTENING' && 'Listening... Tap to process'}
-            {recordingState === 'PROCESSING' && 'AI Parsing speech with HSN & GST rates...'}
-            {recordingState === 'PARSED' && 'Items Parsed! Review and edit below'}
-          </Text>
-
-          {transcript ? (
-            <View style={styles.transcriptBox}>
-              <Text style={styles.transcriptLabel}>Live Transcript:</Text>
-              <Text style={styles.transcriptText}>"{transcript}"</Text>
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>{t('voiceBilling.transcript')}</Text>
+          {speech.error ? (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorText}>{speech.error}</Text>
             </View>
           ) : null}
-
-          {/* Sample Prompts */}
-          <View style={styles.hintsContainer}>
-            <Text style={styles.hintsTitle}>Try saying:</Text>
-            {SAMPLE_VOICE_COMMANDS.map((cmd, idx) => (
+          <View style={{ alignItems: 'center', marginVertical: 12 }}>
+            <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
               <TouchableOpacity
-                key={idx}
-                onPress={() => {
-                  setTranscript(cmd);
-                  setRecordingState('PARSED');
-                }}
+                style={styles.micButton}
+                onPress={() => void (listening ? speech.stop() : speech.start())}
+                activeOpacity={0.85}
               >
-                <Text style={styles.hintChip}>• "{cmd}"</Text>
+                {speech.state === 'requesting' ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.micButtonText}>
+                    {listening ? t('voiceBilling.stop') : t('voiceBilling.listen')}
+                  </Text>
+                )}
               </TouchableOpacity>
-            ))}
+            </Animated.View>
+            {listening ? (
+              <TouchableOpacity onPress={() => void speech.cancel()} style={{ marginTop: 8 }}>
+                <Text style={styles.hint}>{t('voiceBilling.cancel')}</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
+          <TextInput
+            style={[styles.input, { minHeight: 72, textAlignVertical: 'top' }]}
+            multiline
+            value={editedTranscript}
+            onChangeText={(text) => {
+              setEditedTranscript(text);
+              applyTranscript(text);
+            }}
+            placeholder={t('voiceBilling.transcriptHint')}
+          />
+          <Text style={styles.hint}>{t('voiceBilling.editHint')}</Text>
         </View>
 
-        {/* Parsed Items List */}
         <View style={styles.card}>
-          <View style={styles.tableHeaderRow}>
-            <Text style={styles.sectionTitle}>
-              Parsed Items ({parsedItems.length})
-            </Text>
-            <TouchableOpacity
-              onPress={() =>
-                setParsedItems([
-                  ...parsedItems,
-                  {
-                    id: `item_${Date.now()}`,
-                    name: 'New Custom Item',
-                    quantity: 1,
-                    unit: 'PCS',
-                    unitPrice: 100,
-                    taxRate: 18,
-                    total: 118,
-                  },
-                ])
-              }
-            >
-              <Text style={styles.addItemText}>+ Add Manual</Text>
-            </TouchableOpacity>
-          </View>
-
-          {parsedItems.map((item, index) => (
-            <View key={item.id} style={styles.itemCard}>
-              <View style={styles.itemHeader}>
-                <Text style={styles.itemIndex}>#{index + 1}</Text>
-                <TextInput
-                  style={styles.itemNameInput}
-                  value={item.name}
-                  onChangeText={(val) => handleUpdateItem(item.id, 'name', val)}
-                  placeholder="Item Name"
-                />
-                <TouchableOpacity
-                  onPress={() => handleRemoveItem(item.id)}
-                  style={styles.deleteBtn}
-                >
-                  <Text style={styles.deleteBtnText}>✕</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.itemMetaInputs}>
-                <View style={styles.colInput}>
-                  <Text style={styles.colLabel}>Qty</Text>
-                  <TextInput
-                    style={styles.smallInput}
-                    keyboardType="numeric"
-                    value={item.quantity.toString()}
-                    onChangeText={(val) => handleUpdateItem(item.id, 'quantity', val)}
-                  />
-                </View>
-
-                <View style={styles.colInput}>
-                  <Text style={styles.colLabel}>Rate (₹)</Text>
-                  <TextInput
-                    style={styles.smallInput}
-                    keyboardType="numeric"
-                    value={item.unitPrice.toString()}
-                    onChangeText={(val) => handleUpdateItem(item.id, 'unitPrice', val)}
-                  />
-                </View>
-
-                <View style={styles.colInput}>
-                  <Text style={styles.colLabel}>GST %</Text>
-                  <TextInput
-                    style={styles.smallInput}
-                    keyboardType="numeric"
-                    value={item.taxRate.toString()}
-                    onChangeText={(val) => handleUpdateItem(item.id, 'taxRate', val)}
-                  />
-                </View>
-
-                <View style={styles.colTotal}>
-                  <Text style={styles.colLabel}>Total</Text>
-                  <Text style={styles.colTotalValue}>
-                    ₹{item.total.toFixed(2)}
-                  </Text>
-                </View>
-              </View>
+          <Text style={styles.sectionTitle}>{t('voiceBilling.items')}</Text>
+          {parsedItems.map((item) => (
+            <View key={item.id} style={styles.itemRow}>
+              <TextInput
+                style={[styles.input, { flex: 2 }]}
+                value={item.name}
+                onChangeText={(val) => handleUpdateItem(item.id, 'name', val)}
+              />
+              <TextInput
+                style={[styles.input, { flex: 0.7, marginLeft: 6 }]}
+                keyboardType="numeric"
+                value={String(item.quantity)}
+                onChangeText={(val) => handleUpdateItem(item.id, 'quantity', val)}
+              />
+              <TextInput
+                style={[styles.input, { flex: 0.9, marginLeft: 6 }]}
+                keyboardType="numeric"
+                value={String(item.unitPrice)}
+                onChangeText={(val) => handleUpdateItem(item.id, 'unitPrice', val)}
+              />
+              <TouchableOpacity onPress={() => setParsedItems((prev) => prev.filter((it) => it.id !== item.id))}>
+                <Text style={styles.hint}>✕</Text>
+              </TouchableOpacity>
             </View>
           ))}
-        </View>
-
-        {/* Bill Summary */}
-        <View style={styles.summaryCard}>
-          <Text style={styles.sectionTitle}>Summary Preview</Text>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Taxable Amount</Text>
+            <Text style={styles.summaryLabel}>{t('voiceBilling.taxable')}</Text>
             <Text style={styles.summaryVal}>{formatINR(gstSummary.summary.totalTaxableAmount)}</Text>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Estimated GST</Text>
+            <Text style={styles.summaryLabel}>{t('voiceBilling.tax')}</Text>
             <Text style={styles.summaryVal}>{formatINR(gstSummary.summary.totalTaxAmount)}</Text>
           </View>
-          <View style={[styles.summaryRow, styles.grandTotalRow]}>
-            <Text style={styles.grandTotalLabel}>Grand Total</Text>
-            <Text style={styles.grandTotalVal}>
-              {formatINR(gstSummary.summary.grandTotal)}
-            </Text>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>{t('voiceBilling.total')}</Text>
+            <Text style={styles.grandTotalVal}>{formatINR(gstSummary.summary.grandTotal)}</Text>
           </View>
         </View>
       </ScrollView>
 
-      {/* Footer CTA */}
       <View style={styles.bottomBar}>
-        <TouchableOpacity
-          style={styles.confirmBtn}
-          onPress={handleProceedToInvoice}
-          activeOpacity={0.85}
-        >
+        <TouchableOpacity style={styles.confirmBtn} onPress={handleProceedToInvoice} activeOpacity={0.85}>
           <Text style={styles.confirmBtnText}>{t('voiceBilling.proceed')}</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {
@@ -744,7 +607,44 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
+  langRow: { flexDirection: 'row', gap: 8, marginBottom: 10, flexWrap: 'wrap' },
+  langChip: {
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  langChipOn: { backgroundColor: '#4338CA', borderColor: '#4338CA' },
+  langChipText: { fontSize: 12, fontWeight: '700', color: '#475569' },
+  langChipTextOn: { color: '#FFFFFF' },
+  errorBanner: {
+    backgroundColor: '#FEE2E2',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10,
+  },
+  errorText: { color: '#B91C1C', fontSize: 13, fontWeight: '600' },
+  mockBanner: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 10,
+    padding: 8,
+    marginBottom: 10,
+  },
+  mockText: { color: '#92400E', fontSize: 12 },
+  hint: { fontSize: 12, color: '#64748B', marginTop: 8 },
+  itemRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 },
+  input: {
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: '#0F172A',
+    backgroundColor: '#fff',
+  },
+  micButtonText: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
 });
 
 export default VoiceBillingScreen;
-

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, status, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -12,7 +12,8 @@ from app.schemas.sync import (
     SyncPullResponse,
 )
 from app.services.sync_reconciler import SyncReconciler, MODEL_MAP
-from app.models.entities import Invoice, InvoiceItem, Payment
+from app.api.deps import get_current_user, assert_business_owner
+from app.models.entities import Invoice, InvoiceItem, Payment, User
 
 router = APIRouter()
 reconciler = SyncReconciler()
@@ -20,23 +21,27 @@ reconciler = SyncReconciler()
 @router.post("/push", response_model=SyncBatchResult, status_code=status.HTTP_200_OK)
 async def push_sync(
     request: SyncPushRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """
     Ingests batched mutation operations from mobile clients and reconciles
-    against PostgreSQL with per-item savepoint isolation.
+    against SQLite with per-item savepoint isolation. Items are accepted
+    only when they belong to a business owned (or being claimed) by the user.
     """
-    return await reconciler.reconcile_batch(db, request.items)
+    return await reconciler.reconcile_batch(db, request.items, user=user)
 
 @router.get("/pull", response_model=SyncPullResponse, status_code=status.HTTP_200_OK)
 async def pull_sync(
     business_id: uuid.UUID = Query(..., description="Target business UUID"),
     since: Optional[datetime] = Query(None, description="ISO timestamp for delta filtering"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """
     Pulls changes created on server or other devices since the specified timestamp.
     """
+    await assert_business_owner(db, user, business_id)
     server_now = datetime.now(timezone.utc)
     changes = {}
 

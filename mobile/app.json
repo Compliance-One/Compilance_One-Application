@@ -8,16 +8,51 @@
     "scheme": "complianceone",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.complianceone.app"
+      "bundleIdentifier": "com.complianceone.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Allow Compliance One to record your voice so it can fill in invoice items.",
+        "NSSpeechRecognitionUsageDescription": "Allow Compliance One to convert your speech into invoice line items.",
+        "NSBluetoothAlwaysUsageDescription": "Allow Compliance One to connect to your thermal receipt printer.",
+        "NSBluetoothPeripheralUsageDescription": "Allow Compliance One to connect to your thermal receipt printer."
+      }
     },
     "android": {
-      "package": "com.complianceone.app"
+      "package": "com.complianceone.app",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "plugins": [
+      "expo-dev-client",
       "expo-sqlite",
       "expo-font",
       "expo-status-bar",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow $(PRODUCT_NAME) to use the microphone for voice billing.",
+          "speechRecognitionPermission": "Allow $(PRODUCT_NAME) to convert speech into invoice items.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox"
+          ]
+        }
+      ],
+      "react-native-thermal-printer-driver",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      "expo-secure-store"
     ]
   }
 }

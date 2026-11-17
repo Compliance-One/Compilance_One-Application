@@ -3,6 +3,7 @@ import { create } from 'zustand';
 export interface UserProfile {
   id: string;
   name: string;
+  phone?: string;
   email: string;
 }
 
@@ -11,6 +12,8 @@ export interface BusinessSession {
   name: string;
   gstin?: string;
   stateCode?: string;
+  openingCash?: number;
+  openingBank?: number;
 }
 
 export interface AppStoreState {

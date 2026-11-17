@@ -1,7 +1,7 @@
 %% ============================================================
 %% GST VOICE BILLING APP - System Architecture
 %% Pattern: Offline-First Mobile Client -> Sync Bridge -> Backend
-%% Services -> Neon Postgres, with Local Views enabling every
+%% Services -> SQLite, with Local Views enabling every
 %% compliance screen (Ledger, P&L, Balance Sheet, GSTR-1) to run
 %% fully offline; backend exists for backup/multi-device sync only
 %% ============================================================
@@ -95,7 +95,7 @@ graph TD
     SVCINV -->|"feeds invoice data"| SVCGSTR
 
     %% ----- DATA LAYER -----
-    DB[("PostgreSQL on Neon<br/>serverless")]
+    DB[("SQLite<br/>file-backed")]
     VBAL[("customer_balances view<br/>SUM(credit) - SUM(debit)")]
     VPL[("P&L view<br/>SUM(invoices) - SUM(expenses)")]
     VBS[("Balance Sheet view<br/>assets minus liabilities")]
