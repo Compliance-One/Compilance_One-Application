@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Modal,
   Alert,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../store/useAppStore';
@@ -16,6 +17,8 @@ import { getDb } from '../../db/schema';
 import { createInvoice, nextInvoiceNumber } from '../../db/repositories';
 import { localISODate } from '../../lib/dates';
 import { formatINR } from '../../lib/format';
+import { numberToInput, parseDecimal, sanitizeDecimalInput } from '../../lib/numberInput';
+import { Screen } from '../../ui';
 import { alertActionError, printInvoiceById, shareInvoicePdfById } from '../../billing/invoiceActions';
 import {
   INDIAN_STATES,
@@ -91,12 +94,13 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
       return route.params.initialItems.map((item: any, idx: number) => ({
         id: item.id || `item_${idx}`,
         name: item.name || '',
-        hsnCode: item.hsnCode || '8481',
+        hsnCode: item.hsnCode || '',
         quantity: item.quantity || 1,
         unit: item.unit || 'PCS',
         unitPrice: item.unitPrice || 0,
         discountPercent: 0,
-        taxRate: item.taxRate || 18,
+        // 0% is a real rate (exempt goods); only fall back when it is missing.
+        taxRate: typeof item.taxRate === 'number' && Number.isFinite(item.taxRate) ? item.taxRate : 0,
         taxableAmount: (item.quantity || 1) * (item.unitPrice || 0),
         cgstAmount: 0,
         sgstAmount: 0,
@@ -117,13 +121,19 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
     unit: 'PCS',
     unitPrice: 0,
     discountPercent: 0,
-    taxRate: 18,
+    taxRate: 0,
     taxableAmount: 0,
     cgstAmount: 0,
     sgstAmount: 0,
     igstAmount: 0,
     totalAmount: 0,
   });
+
+  // Number boxes keep their raw text so "2." and "0.5" can be typed.
+  const [qtyText, setQtyText] = useState('1');
+  const [priceText, setPriceText] = useState('');
+  const [discountText, setDiscountText] = useState('');
+  const savingRef = useRef(false);
 
   // Calculate Taxes whenever items or customer state change
   const isInterState = customer.stateCode !== sellerStateCode;
@@ -213,19 +223,26 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
       unit: 'PCS',
       unitPrice: 0,
       discountPercent: 0,
-      taxRate: 18,
+      taxRate: 0,
       taxableAmount: 0,
       cgstAmount: 0,
       sgstAmount: 0,
       igstAmount: 0,
       totalAmount: 0,
     });
+    setQtyText('1');
+    setPriceText('');
+    setDiscountText('');
     setIsItemModalVisible(true);
   };
 
   const handleSaveModalItem = () => {
     if (!editingItem.name.trim()) {
       Alert.alert(t('invoiceCreate.validationTitle'), t('invoiceCreate.itemNameRequired'));
+      return;
+    }
+    if (editingItem.quantity <= 0) {
+      Alert.alert(t('invoiceCreate.validationTitle'), t('invoiceCreate.qtyRequired'));
       return;
     }
     if (editingItem.unitPrice <= 0) {
@@ -252,6 +269,9 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
 
   const handleEditItem = (item: InvoiceLineItem) => {
     setEditingItem(item);
+    setQtyText(numberToInput(item.quantity));
+    setPriceText(numberToInput(item.unitPrice));
+    setDiscountText(item.discountPercent ? numberToInput(item.discountPercent) : '');
     setIsItemModalVisible(true);
   };
 
@@ -260,10 +280,7 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
       Alert.alert(t('invoiceCreate.missingBusiness'));
       return;
     }
-    if (!customer.name.trim()) {
-      Alert.alert(t('invoiceCreate.missingCustomer'));
-      return;
-    }
+    if (savingRef.current) return;
     if (items.length === 0) {
       Alert.alert(t('invoiceCreate.noItems'));
       return;
@@ -276,7 +293,10 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
     const termsMatch = /(\d+)/.exec(paymentTerms);
     const paymentTermsDays = termsMatch ? parseInt(termsMatch[1], 10) : 15;
 
+    savingRef.current = true;
     setSaving(true);
+    const savedNumber = invoiceNumber;
+    const savedTotal = roundedGrandTotal;
     try {
       const db = await getDb();
       const invoiceId = await createInvoice(db, {
@@ -287,14 +307,17 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
         invoiceDate,
         paymentTermsDays,
         inputMode: route?.params?.inputMode === 'voice' ? 'voice' : 'text',
-        customer: {
-          id: route?.params?.initialCustomer?.id,
-          name: customer.name.trim(),
-          gstin: customer.gstin || undefined,
-          phone: customer.phone || undefined,
-          stateCode: customer.stateCode,
-          address: customer.billingAddress || undefined,
-        },
+        // Walk-in sale: no customer name means no customer record.
+        customer: customer.name.trim()
+          ? {
+              id: route?.params?.initialCustomer?.id,
+              name: customer.name.trim(),
+              gstin: customer.gstin || undefined,
+              phone: customer.phone || undefined,
+              stateCode: customer.stateCode,
+              address: customer.billingAddress || undefined,
+            }
+          : null,
         items: items.map((it) => ({
           id: it.id,
           name: it.name,
@@ -306,13 +329,24 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
           taxRate: it.taxRate,
         })),
       });
+      // Clear the form so a second tap cannot save the same bill twice.
+      setItems([]);
+      setCustomer({
+        name: '',
+        gstin: '',
+        phone: '',
+        stateCode: sellerStateCode,
+        stateName: stateNameFor(sellerStateCode),
+        billingAddress: '',
+      });
+      setInvoiceNumber(await nextInvoiceNumber(db, business.id));
       Alert.alert(
         t('invoiceCreate.created'),
-        t('invoiceCreate.createdBody', { number: invoiceNumber, amount: formatINR(roundedGrandTotal) }),
+        t('invoiceCreate.createdBody', { number: savedNumber, amount: formatINR(savedTotal) }),
         [
           {
             text: t('invoiceCreate.viewInvoices'),
-            onPress: () => navigation?.navigate && navigation.navigate('MainTabs', { screen: 'Invoices' }),
+            onPress: () => navigation?.navigate && navigation.navigate('Invoices'),
           },
           {
             text: t('invoiceCreate.sharePdf'),
@@ -327,24 +361,14 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
     } catch (e) {
       Alert.alert(t('common.error'), e instanceof Error ? e.message : String(e));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   return (
-    <View style={styles.container}>
-      {/* Top Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>{t('invoiceCreate.title')}</Text>
-          <Text style={styles.subTitle}>{t('invoiceCreate.subtitle')}</Text>
-        </View>
-        <TouchableOpacity style={styles.saveDraftBtn} onPress={() => Alert.alert(t('invoiceCreate.draftSaved'))}>
-          <Text style={styles.saveDraftText}>{t('invoiceCreate.saveDraft')}</Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
+    <Screen edges={['bottom']} scroll={false} style={styles.container}>
+      <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         {/* Invoice Meta */}
         <View style={styles.card}>
           <Text style={styles.sectionHeading}>{t('invoiceCreate.metadata')}</Text>
@@ -380,7 +404,7 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
               <Text style={styles.label}>{t('invoiceCreate.sellerState')}</Text>
               <View style={styles.disabledInput}>
                 <Text style={styles.disabledText}>
-                  State Code: {sellerStateCode}
+                  {t('invoiceCreate.stateCode', { code: sellerStateCode })}
                 </Text>
               </View>
             </View>
@@ -461,13 +485,13 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
         <View style={styles.card}>
           <View style={styles.cardHeaderWithAction}>
             <Text style={styles.sectionHeading}>
-              Line Items ({items.length})
+              {t('invoiceCreate.lineItems', { count: items.length })}
             </Text>
             <TouchableOpacity
               style={styles.addItemBtn}
               onPress={handleOpenAddModal}
             >
-              <Text style={styles.addItemBtnText}>+ Add Item</Text>
+              <Text style={styles.addItemBtnText}>{t('invoiceCreate.addItemBtn')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -491,24 +515,24 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
               </View>
 
               <Text style={styles.itemSubDetail}>
-                HSN: {item.hsnCode || 'N/A'} • {item.quantity} {item.unit} @ ₹
-                {item.unitPrice.toFixed(2)}
-                {item.discountPercent > 0 ? ` (${item.discountPercent}% off)` : ''}
+                {item.hsnCode ? `${t('invoiceCreate.hsnShort')}: ${item.hsnCode} • ` : ''}
+                {item.quantity} {item.unit} × ₹{item.unitPrice.toFixed(2)}
+                {item.discountPercent > 0 ? ` (${t('invoiceCreate.percentOff', { pct: item.discountPercent })})` : ''}
               </Text>
 
               <View style={styles.itemPriceSplit}>
                 <Text style={styles.splitTaxable}>
-                  Taxable: ₹{item.taxableAmount.toFixed(2)}
+                  {t('invoiceCreate.taxableShort')}: ₹{item.taxableAmount.toFixed(2)}
                 </Text>
                 <Text style={styles.splitGst}>
-                  GST ({item.taxRate}%): ₹
+                  {t('invoiceCreate.gstShort', { rate: item.taxRate })}: ₹
                   {(isInterState
                     ? item.igstAmount
                     : item.cgstAmount + item.sgstAmount
                   ).toFixed(2)}
                 </Text>
                 <Text style={styles.splitTotal}>
-                  Total: ₹{item.totalAmount.toFixed(2)}
+                  {t('invoiceCreate.totalShort')}: ₹{item.totalAmount.toFixed(2)}
                 </Text>
               </View>
             </View>
@@ -592,7 +616,7 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
         transparent
         onRequestClose={() => setIsItemModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>
               {editingItem.id && items.some((i) => i.id === editingItem.id)
@@ -643,14 +667,13 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
                   <Text style={styles.label}>{t('invoiceCreate.qtyLabel')}</Text>
                   <TextInput
                     style={styles.input}
-                    value={editingItem.quantity.toString()}
-                    keyboardType="numeric"
-                    onChangeText={(val) =>
-                      setEditingItem({
-                        ...editingItem,
-                        quantity: parseFloat(val) || 0,
-                      })
-                    }
+                    value={qtyText}
+                    keyboardType="decimal-pad"
+                    onChangeText={(val) => {
+                      const clean = sanitizeDecimalInput(val, 3);
+                      setQtyText(clean);
+                      setEditingItem((prev) => ({ ...prev, quantity: parseDecimal(clean) }));
+                    }}
                   />
                 </View>
 
@@ -658,14 +681,14 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
                   <Text style={styles.label}>{t('invoiceCreate.unitPriceLabel')}</Text>
                   <TextInput
                     style={styles.input}
-                    value={editingItem.unitPrice.toString()}
-                    keyboardType="numeric"
-                    onChangeText={(val) =>
-                      setEditingItem({
-                        ...editingItem,
-                        unitPrice: parseFloat(val) || 0,
-                      })
-                    }
+                    value={priceText}
+                    keyboardType="decimal-pad"
+                    placeholder="0"
+                    onChangeText={(val) => {
+                      const clean = sanitizeDecimalInput(val, 2);
+                      setPriceText(clean);
+                      setEditingItem((prev) => ({ ...prev, unitPrice: parseDecimal(clean) }));
+                    }}
                   />
                 </View>
               </View>
@@ -675,14 +698,14 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
                   <Text style={styles.label}>{t('invoiceCreate.discountLabel')}</Text>
                   <TextInput
                     style={styles.input}
-                    value={editingItem.discountPercent.toString()}
-                    keyboardType="numeric"
-                    onChangeText={(val) =>
-                      setEditingItem({
-                        ...editingItem,
-                        discountPercent: parseFloat(val) || 0,
-                      })
-                    }
+                    value={discountText}
+                    keyboardType="decimal-pad"
+                    placeholder="0"
+                    onChangeText={(val) => {
+                      const clean = sanitizeDecimalInput(val, 2);
+                      setDiscountText(clean);
+                      setEditingItem((prev) => ({ ...prev, discountPercent: Math.min(100, parseDecimal(clean)) }));
+                    }}
                   />
                 </View>
 
@@ -731,9 +754,9 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </Screen>
   );
 };
 

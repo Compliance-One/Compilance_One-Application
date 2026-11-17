@@ -17,6 +17,8 @@ import { CONFIG } from '../../config/env';
 import { getDb } from '../../db/schema';
 import { listCustomers, listProducts } from '../../db/repositories';
 import { formatINR } from '../../lib/format';
+import { parseDecimal, sanitizeDecimalInput } from '../../lib/numberInput';
+import { Screen } from '../../ui';
 import { calculateInvoiceTotals, normalizeStateCode, stateCodeFromGstin } from '../../lib/gst';
 import { parseTranscript, type CatalogCustomer, type CatalogProduct, type ParsedVoiceItem } from '../../voice/parseTranscript';
 import { useSpeechToText, type SpeechLocale } from '../../voice/useSpeechToText';
@@ -31,6 +33,9 @@ export interface ParsedItem {
   hsnCode?: string;
   productId?: string;
   total: number;
+  /** Raw text in the number boxes, so "2." and "0.5" can be typed. */
+  qtyText?: string;
+  priceText?: string;
 }
 
 function localeFromApp(voiceLanguage?: string | null, i18nLang?: string): SpeechLocale {
@@ -45,7 +50,7 @@ function itemsFromParsed(parsed: ParsedVoiceItem[]): ParsedItem[] {
     quantity: it.quantity,
     unit: it.unit,
     unitPrice: it.unitPrice ?? 0,
-    taxRate: it.taxRate ?? 18,
+    taxRate: it.taxRate ?? 0,
     hsnCode: it.hsnCode,
     productId: it.productId,
     total: (it.unitPrice ?? 0) * it.quantity,
@@ -123,9 +128,15 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
       prev.map((item) => {
         if (item.id !== id) return item;
         const updated = { ...item };
-        if (field === 'quantity') updated.quantity = parseFloat(value) || 0;
-        if (field === 'unitPrice') updated.unitPrice = parseFloat(value) || 0;
-        if (field === 'taxRate') updated.taxRate = parseFloat(value) || 0;
+        if (field === 'quantity') {
+          updated.qtyText = sanitizeDecimalInput(value, 3);
+          updated.quantity = parseDecimal(updated.qtyText);
+        }
+        if (field === 'unitPrice') {
+          updated.priceText = sanitizeDecimalInput(value, 2);
+          updated.unitPrice = parseDecimal(updated.priceText);
+        }
+        if (field === 'taxRate') updated.taxRate = parseDecimal(sanitizeDecimalInput(value, 2));
         if (field === 'name') updated.name = value;
         updated.total = updated.quantity * updated.unitPrice;
         return updated;
@@ -157,7 +168,7 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
         gstin: customerGstin,
         stateCode: buyerStateCode,
       },
-      initialItems: parsedItems,
+      initialItems: parsedItems.map(({ qtyText: _q, priceText: _p, ...rest }) => rest),
       inputMode: 'voice',
     });
   };
@@ -165,7 +176,7 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
   const listening = speech.state === 'listening' || speech.state === 'requesting';
 
   return (
-    <View style={styles.container}>
+    <Screen edges={['bottom']} scroll={false} style={styles.container}>
       <View style={styles.topBar}>
         <View>
           <Text style={styles.screenTitle}>{t('voiceBilling.title')}</Text>
@@ -174,7 +185,7 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
           </Text>
         </View>
         <View style={styles.sellerBadge}>
-          <Text style={styles.sellerState}>State: {sellerStateCode}</Text>
+          <Text style={styles.sellerState}>{t('voiceBilling.stateLabel', { code: sellerStateCode })}</Text>
         </View>
       </View>
 
@@ -277,14 +288,14 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
               />
               <TextInput
                 style={[styles.input, { flex: 0.7, marginLeft: 6 }]}
-                keyboardType="numeric"
-                value={String(item.quantity)}
+                keyboardType="decimal-pad"
+                value={item.qtyText ?? String(item.quantity)}
                 onChangeText={(val) => handleUpdateItem(item.id, 'quantity', val)}
               />
               <TextInput
                 style={[styles.input, { flex: 0.9, marginLeft: 6 }]}
-                keyboardType="numeric"
-                value={String(item.unitPrice)}
+                keyboardType="decimal-pad"
+                value={item.priceText ?? String(item.unitPrice)}
                 onChangeText={(val) => handleUpdateItem(item.id, 'unitPrice', val)}
               />
               <TouchableOpacity onPress={() => setParsedItems((prev) => prev.filter((it) => it.id !== item.id))}>
@@ -312,7 +323,7 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
           <Text style={styles.confirmBtnText}>{t('voiceBilling.proceed')}</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </Screen>
   );
 };
 

@@ -76,7 +76,8 @@
     "newInvoice": "புதிய விலைப்பட்டியல்",
     "newInvoiceHint": "GST விலைப்பட்டியல் உருவாக்க",
     "customersHint": "வாடிக்கையாளர்கள் மற்றும் நிலுவை",
-    "inventoryHint": "சரக்கு மற்றும் மாற்றங்கள்"
+    "inventoryHint": "சரக்கு மற்றும் மாற்றங்கள்",
+    "monthTitle": "இந்த மாதம்"
   },
   "reports": {
     "title": "அறிக்கைகள்",
@@ -200,7 +201,8 @@
     "items": "வரிசைப் பொருட்கள்",
     "taxable": "வரி விதிப்பிற்குரியது",
     "tax": "GST",
-    "total": "மொத்தம்"
+    "total": "மொத்தம்",
+    "stateLabel": "மாநிலம்: {{code}}"
   },
   "invoiceCreate": {
     "title": "புதிய வரி விலைப்பட்டியல்",
@@ -229,7 +231,7 @@
     "intraState": "மாநிலத்திற்குள் (CGST + SGST)",
     "terms": "15 நாட்களில் செலுத்த வேண்டும்",
     "notes": "உங்கள் வணிகத்திற்கு நன்றி.",
-    "percentOff": "{{percent}}% தள்ளுபடி",
+    "percentOff": "{{pct}}% தள்ளுபடி",
     "subtitle": "GST இணக்கம் விதி 46 வடிவம்",
     "saveDraft": "வரைவைச் சேமி",
     "metadata": "விலைப்பட்டியல் விவரங்கள்",
@@ -264,7 +266,15 @@
     "cancel": "ரத்து",
     "saveItem": "உருப்படியைச் சேமி",
     "gstinPlaceholder": "27…",
-    "titleNew": "புதிய வரி விலைப்பட்டியல்"
+    "titleNew": "புதிய வரி விலைப்பட்டியல்",
+    "qtyRequired": "0-க்கு மேல் அளவு உள்ளிடவும்.",
+    "stateCode": "மாநில குறியீடு: {{code}}",
+    "lineItems": "பொருட்கள் ({{count}})",
+    "addItemBtn": "+ பொருள் சேர்",
+    "hsnShort": "HSN",
+    "taxableShort": "வரிக்குரிய தொகை",
+    "gstShort": "GST ({{rate}}%)",
+    "totalShort": "மொத்தம்"
   },
   "customers": {
     "title": "வாடிக்கையாளர்கள்",
@@ -303,13 +313,15 @@
     "creditLimit": "கடன் வரம்பு (₹)",
     "billingAddress": "பில் முகவரி",
     "cancel": "ரத்து",
-    "save": "வாடிக்கையாளரைச் சேமி"
+    "save": "வாடிக்கையாளரைச் சேமி",
+    "addBtn": "+ வாடிக்கையாளர் சேர்",
+    "newBillBtn": "+ பில்"
   },
   "products": {
     "title": "பொருட்கள்",
     "searchPlaceholder": "பொருள் பெயர், SKU அல்லது HSN மூலம் தேடுங்கள்…",
-    "editTitle": "பட்டியல் பொருளைத் திருத்து",
-    "addTitle": "புதிய பொருளைச் சேர்",
+    "editTitle": "பொருளை மாற்று",
+    "addTitle": "புதிய பொருள்",
     "nameRequired": "பொருளின் பெயர் காலியாக இருக்கக்கூடாது.",
     "priceRequired": "விற்பனை விலை 0-ஐ விட அதிகமாக இருக்க வேண்டும்.",
     "deleteTitle": "பொருளை நீக்கு",
@@ -352,7 +364,22 @@
     "gstRate": "பொருந்தும் GST விகிதம் %",
     "currentStock": "தற்போதைய இருப்பு",
     "minReorder": "குறைந்தபட்ச மறுஆர்டர் நிலை",
-    "deleteBody": "பட்டியலிலிருந்து \"{{name}}\" ஐ நீக்க விரும்புகிறீர்களா?"
+    "deleteBody": "பட்டியலிலிருந்து \"{{name}}\" ஐ நீக்க விரும்புகிறீர்களா?",
+    "outOfStock": "இருப்பு இல்லை",
+    "lowStock": "குறைவு ({{count}})",
+    "inStock": "{{count}} இருப்பு",
+    "addBtn": "+ பொருள் சேர்",
+    "categories": {
+      "All": "அனைத்தும்",
+      "Plumbing": "குழாய்",
+      "Electricals": "மின்சாதனம்",
+      "Hardware": "ஹார்டுவேர்",
+      "Paints": "பெயிண்ட்",
+      "BuildingMaterials": "கட்டுமான பொருட்கள்"
+    },
+    "hsnPill": "HSN: {{value}}",
+    "gstPill": "GST: {{rate}}%",
+    "unitPill": "அலகு: {{unit}}"
   },
   "inventory": {
     "title": "சரக்கு",
@@ -363,13 +390,13 @@
     "insufficientTitle": "போதிய இருப்பு இல்லை",
     "insufficientBody": "கிடைக்கும் இருப்பு {{qty}} {{unit}} மட்டுமே.",
     "adjusted": "இருப்பு சரிசெய்யப்பட்டது",
-    "newCount": "புதிய உறுதிப்படுத்தப்பட்ட இயற்பியல் எண்ணிக்கை",
+    "newCount": "எண்ணிய அளவு",
     "adjustmentQty": "சரிசெய்தல் அளவு",
     "qtyPlaceholder": "அளவை உள்ளிடவும்",
     "reasonPlaceholder": "எ.கா. GRN-2026-99 அல்லது இயற்பியல் தணிக்கை வேறுபாடு",
     "subtitle": "நேரடி இருப்பு மற்றும் மறுஆர்டர் கண்காணிப்பு",
     "stockValuation": "இருப்பு மதிப்பீடு",
-    "lowStock": "குறைந்த இருப்பு எச்சரிக்கை",
+    "lowStock": "குறைந்த இருப்பு",
     "outOfStock": "இருப்பு இல்லை",
     "currentStock": "தற்போதைய இருப்பு",
     "reorderLevel": "மறுஆர்டர் நிலை",
@@ -380,7 +407,15 @@
     "reasonType": "சரிசெய்தல் காரணம் / வகை",
     "remarks": "குறிப்புகள் / குறிப்பு எண்",
     "apply": "சரிசெய்தலைப் பயன்படுத்து",
-    "adjustedBody": "\"{{name}}\" இருப்பு {{qty}} {{unit}} ஆக புதுப்பிக்கப்பட்டது."
+    "adjustedBody": "\"{{name}}\" இருப்பு {{qty}} {{unit}} ஆக புதுப்பிக்கப்பட்டது.",
+    "adjustIn": "இருப்பு வரவு (கொள்முதல்)",
+    "adjustOut": "இருப்பு வெளியே (விற்பனை)",
+    "adjustDamage": "சேதம் / வீண்",
+    "adjustAudit": "எண்ணிய இருப்பு",
+    "inStock": "இருப்பு உள்ளது",
+    "costPer": "விலை: ₹{{cost}}/{{unit}}",
+    "adjustBtn": "± இருப்பு மாற்று",
+    "adjustQty": "அளவு"
   },
   "printer": {
     "title": "ரசீது அச்சுப்பொறி",
@@ -518,5 +553,31 @@
     "yes": "ஆம்",
     "no": "இல்லை",
     "billTo": "பில் பெறுபவர்"
+  },
+  "voice": {
+    "errPermission": "மைக் அனுமதி இல்லை. போன் Settings → Apps → Compliance One → Permissions-ல் அனுமதிக்கவும்.",
+    "errNetwork": "குரலுக்கு இணையம் இல்லை. மொபைல் டேட்டா அல்லது Wi-Fi இயக்கவும், அல்லது ஆஃப்லைன் பேச்சு பேக்கை பதிவிறக்கவும் (Google ஆப் → Settings → Voice → Offline speech recognition).",
+    "errNoSpeech": "எதுவும் கேட்கவில்லை. மைக்கை தட்டி மீண்டும் பேசவும்.",
+    "errBusy": "குரல் பிஸியாக உள்ளது. சிறிது நேரம் கழித்து முயற்சிக்கவும்.",
+    "errMic": "மைக் வேலை செய்யவில்லை. மைக் பயன்படுத்தும் மற்ற ஆப்களை மூடி மீண்டும் முயற்சிக்கவும்.",
+    "errUnavailable": "இந்த போனில் குரல் தட்டச்சு தயாராக இல்லை. Google ஆப் → Settings → Voice → Offline speech recognition திறந்து தமிழ் மற்றும் English (India) பதிவிறக்கவும், அல்லது இணையத்தை இயக்கி மீண்டும் முயற்சிக்கவும்."
+  },
+  "ui": {
+    "decrease": "குறை",
+    "increase": "கூட்டு",
+    "quantity": "அளவு"
+  },
+  "home": {
+    "greeting": "வணக்கம் 🙏",
+    "newBill": "புதிய பில்",
+    "moneyIn": "பணம் வரவு",
+    "today": "இன்றைய பில்கள்",
+    "credit": "கடன்",
+    "items": "பொருட்கள்",
+    "more": "மேலும்",
+    "todaySales": "இன்றைய விற்பனை",
+    "cashToday": "இன்று வந்த பணம்",
+    "owed": "வர வேண்டியது",
+    "voiceBill": "குரலில் பில்"
   }
 }

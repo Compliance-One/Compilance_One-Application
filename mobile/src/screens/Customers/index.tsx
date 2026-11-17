@@ -9,9 +9,12 @@ import {
   Modal,
   Alert,
   ScrollView,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
+import { Screen } from '../../ui';
+import { DecimalInput } from '../../ui/DecimalInput';
 import { useAppStore } from '../../store/useAppStore';
 import { getDb } from '../../db/schema';
 import { listCustomers, upsertCustomer } from '../../db/repositories';
@@ -148,10 +151,6 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
       Alert.alert(t('common.validationError'), t('customers.nameRequired'));
       return;
     }
-    if (!formData.phone.trim()) {
-      Alert.alert(t('common.validationError'), t('customers.phoneRequired'));
-      return;
-    }
 
     if (formData.gstin && !isValidGstin(formData.gstin)) {
       Alert.alert(t('customers.invalidGstin'));
@@ -190,7 +189,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
   };
 
   return (
-    <View style={styles.container}>
+    <Screen edges={['bottom']} scroll={false} style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <View>
@@ -198,7 +197,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
           <Text style={styles.subTitle}>{t('customers.subtitle')}</Text>
         </View>
         <TouchableOpacity style={styles.addBtn} onPress={handleOpenAddModal}>
-          <Text style={styles.addBtnText}>+ Add Customer</Text>
+          <Text style={styles.addBtnText}>{t('customers.addBtn')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -320,7 +319,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                   style={styles.actionBtnInvoice}
                   onPress={() => handleCreateInvoiceForCustomer(item)}
                 >
-                  <Text style={styles.actionTextInvoice}>+ Invoice</Text>
+                  <Text style={styles.actionTextInvoice}>{t('customers.newBillBtn')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -344,7 +343,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
         transparent
         onRequestClose={() => setIsModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>
               {customers.some((c) => c.id === formData.id)
@@ -430,16 +429,10 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.label}>{t('customers.creditLimit')}</Text>
-                  <TextInput
+                  <DecimalInput
                     style={styles.modalInput}
-                    value={formData.creditLimit.toString()}
-                    keyboardType="numeric"
-                    onChangeText={(val) =>
-                      setFormData({
-                        ...formData,
-                        creditLimit: parseFloat(val) || 0,
-                      })
-                    }
+                    value={formData.creditLimit}
+                    onValue={(n) => setFormData((prev) => ({ ...prev, creditLimit: n }))}
                   />
                 </View>
               </View>
@@ -471,9 +464,9 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </Screen>
   );
 };
 

@@ -76,7 +76,8 @@
     "newInvoice": "New invoice",
     "newInvoiceHint": "Create a GST tax invoice",
     "customersHint": "Customers and outstanding balances",
-    "inventoryHint": "Stock on hand and adjustments"
+    "inventoryHint": "Stock on hand and adjustments",
+    "monthTitle": "This month"
   },
   "reports": {
     "title": "Reports",
@@ -200,7 +201,8 @@
     "items": "Line items",
     "taxable": "Taxable",
     "tax": "GST",
-    "total": "Total"
+    "total": "Total",
+    "stateLabel": "State: {{code}}"
   },
   "invoiceCreate": {
     "title": "New Tax Invoice",
@@ -229,7 +231,7 @@
     "intraState": "INTRA-STATE (CGST + SGST)",
     "terms": "Net 15 days",
     "notes": "Thank you for your business.",
-    "percentOff": "{{percent}}% off",
+    "percentOff": "{{pct}}% off",
     "titleNew": "New tax invoice",
     "subtitle": "GST compliance Rule 46 format",
     "saveDraft": "Save draft",
@@ -264,7 +266,15 @@
     "gstRateLabel": "GST rate %",
     "cancel": "Cancel",
     "saveItem": "Save item",
-    "gstinPlaceholder": "27…"
+    "gstinPlaceholder": "27…",
+    "qtyRequired": "Enter a quantity more than 0.",
+    "stateCode": "State code: {{code}}",
+    "lineItems": "Items ({{count}})",
+    "addItemBtn": "+ Add item",
+    "hsnShort": "HSN",
+    "taxableShort": "Taxable",
+    "gstShort": "GST ({{rate}}%)",
+    "totalShort": "Total"
   },
   "customers": {
     "title": "Customers",
@@ -303,13 +313,15 @@
     "creditLimit": "Credit limit (₹)",
     "billingAddress": "Billing address",
     "cancel": "Cancel",
-    "save": "Save customer"
+    "save": "Save customer",
+    "addBtn": "+ Add customer",
+    "newBillBtn": "+ Bill"
   },
   "products": {
     "title": "Products",
     "searchPlaceholder": "Search by product name, SKU, or HSN code…",
-    "editTitle": "Edit catalog product",
-    "addTitle": "Add new product",
+    "editTitle": "Edit item",
+    "addTitle": "Add new item",
     "nameRequired": "Product name cannot be empty.",
     "priceRequired": "Selling price must be greater than 0.",
     "deleteTitle": "Delete product",
@@ -352,7 +364,22 @@
     "gstRate": "Applicable GST rate %",
     "currentStock": "Current stock",
     "minReorder": "Min reorder level",
-    "deleteBody": "Are you sure you want to remove \"{{name}}\" from the catalog?"
+    "deleteBody": "Are you sure you want to remove \"{{name}}\" from the catalog?",
+    "outOfStock": "OUT OF STOCK",
+    "lowStock": "LOW ({{count}})",
+    "inStock": "{{count}} in stock",
+    "addBtn": "+ Add item",
+    "categories": {
+      "All": "All",
+      "Plumbing": "Plumbing",
+      "Electricals": "Electricals",
+      "Hardware": "Hardware",
+      "Paints": "Paints",
+      "BuildingMaterials": "Building materials"
+    },
+    "hsnPill": "HSN: {{value}}",
+    "gstPill": "GST: {{rate}}%",
+    "unitPill": "Unit: {{unit}}"
   },
   "inventory": {
     "title": "Inventory",
@@ -363,14 +390,14 @@
     "insufficientTitle": "Insufficient stock",
     "insufficientBody": "Available stock is only {{qty}} {{unit}}.",
     "adjusted": "Stock adjusted",
-    "newCount": "New verified physical count",
+    "newCount": "Counted quantity",
     "adjustmentQty": "Adjustment quantity",
     "qtyPlaceholder": "Enter quantity",
     "reasonPlaceholder": "e.g. GRN-2026-99 or physical audit mismatch",
     "subtitle": "Live stock & reorder monitoring",
     "stockValuation": "Stock valuation",
-    "lowStock": "Low stock alert",
-    "outOfStock": "Out of stock",
+    "lowStock": "LOW STOCK",
+    "outOfStock": "OUT OF STOCK",
     "currentStock": "Current stock",
     "reorderLevel": "Reorder level",
     "assetValue": "Asset value",
@@ -380,7 +407,15 @@
     "reasonType": "Adjustment reason / type",
     "remarks": "Remarks / reference no.",
     "apply": "Apply adjustment",
-    "adjustedBody": "Inventory for \"{{name}}\" updated to {{qty}} {{unit}}."
+    "adjustedBody": "Inventory for \"{{name}}\" updated to {{qty}} {{unit}}.",
+    "adjustIn": "Stock in (purchase)",
+    "adjustOut": "Stock out (sale / use)",
+    "adjustDamage": "Damage / waste",
+    "adjustAudit": "Counted stock",
+    "inStock": "IN STOCK",
+    "costPer": "Cost: ₹{{cost}}/{{unit}}",
+    "adjustBtn": "± Change stock",
+    "adjustQty": "Quantity"
   },
   "printer": {
     "title": "Receipt printer",
@@ -518,5 +553,31 @@
     "yes": "Y",
     "no": "N",
     "billTo": "Bill to"
+  },
+  "voice": {
+    "errPermission": "Microphone permission is off. Allow it in phone Settings → Apps → Compliance One → Permissions.",
+    "errNetwork": "No internet for voice. Turn on mobile data or Wi-Fi, or download the offline speech pack (Google app → Settings → Voice → Offline speech recognition).",
+    "errNoSpeech": "We did not hear anything. Tap the mic and speak again.",
+    "errBusy": "Voice is busy. Wait a moment and try again.",
+    "errMic": "The microphone is not working. Close other apps using it and try again.",
+    "errUnavailable": "Voice typing is not ready on this phone. Open the Google app → Settings → Voice → Offline speech recognition and download Tamil and English (India), or turn on internet and try again."
+  },
+  "ui": {
+    "decrease": "Less",
+    "increase": "More",
+    "quantity": "Quantity"
+  },
+  "home": {
+    "greeting": "Vanakkam 🙏",
+    "newBill": "New Bill",
+    "moneyIn": "Money In",
+    "today": "Today's Bills",
+    "credit": "Credit",
+    "items": "Items",
+    "more": "More",
+    "todaySales": "Today's sales",
+    "cashToday": "Received today",
+    "owed": "Owed to you",
+    "voiceBill": "Bill by voice"
   }
 }

@@ -9,9 +9,12 @@ import {
   Modal,
   Alert,
   ScrollView,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
+import { Screen } from '../../ui';
+import { sanitizeDecimalInput } from '../../lib/numberInput';
 import { useAppStore } from '../../store/useAppStore';
 import { getDb } from '../../db/schema';
 import { adjustProductStock, listProducts } from '../../db/repositories';
@@ -43,11 +46,12 @@ export interface StockAdjustmentRecord {
 }
 
 
+// label is an i18n key under inventory.adjust*
 const ADJUSTMENT_OPTIONS: { type: AdjustmentType; label: string; color: string }[] = [
-  { type: 'STOCK_IN', label: 'Stock In (Purchase)', color: '#16A34A' },
-  { type: 'STOCK_OUT', label: 'Stock Out (Sale / Usage)', color: '#2563EB' },
-  { type: 'DAMAGE', label: 'Damage / Wastage', color: '#DC2626' },
-  { type: 'AUDIT_CORRECTION', label: 'Physical Audit Count', color: '#D97706' },
+  { type: 'STOCK_IN', label: 'inventory.adjustIn', color: '#16A34A' },
+  { type: 'STOCK_OUT', label: 'inventory.adjustOut', color: '#2563EB' },
+  { type: 'DAMAGE', label: 'inventory.adjustDamage', color: '#DC2626' },
+  { type: 'AUDIT_CORRECTION', label: 'inventory.adjustAudit', color: '#D97706' },
 ];
 
 export const InventoryScreen: React.FC = () => {
@@ -87,7 +91,7 @@ export const InventoryScreen: React.FC = () => {
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>('STOCK_IN');
   const [adjustQuantity, setAdjustQuantity] = useState<string>('10');
-  const [adjustReason, setAdjustReason] = useState<string>('Purchase Inward from Supplier');
+  const [adjustReason, setAdjustReason] = useState<string>('');
 
   // Metrics
   const { totalValuation, lowStockCount, outOfStockCount } = useMemo(() => {
@@ -130,13 +134,13 @@ export const InventoryScreen: React.FC = () => {
     setSelectedItem(item);
     setAdjustmentType('STOCK_IN');
     setAdjustQuantity('5');
-    setAdjustReason('PO Inward Goods Receipt');
+    setAdjustReason('');
     setIsAdjustModalVisible(true);
   };
 
   const handleApplyAdjustment = () => {
     if (!selectedItem) return;
-    const qty = parseInt(adjustQuantity, 10);
+    const qty = parseFloat(adjustQuantity);
     if (isNaN(qty) || qty <= 0) {
       Alert.alert(t('inventory.invalidQtyTitle'), t('inventory.invalidQty'));
       return;
@@ -179,16 +183,16 @@ export const InventoryScreen: React.FC = () => {
 
   const getStockStatusTag = (stock: number, reorder: number) => {
     if (stock <= 0) {
-      return { label: 'OUT OF STOCK', bg: '#FEE2E2', color: '#DC2626' };
+      return { label: t('inventory.outOfStock'), bg: '#FEE2E2', color: '#DC2626' };
     }
     if (stock <= reorder) {
-      return { label: 'LOW STOCK', bg: '#FEF3C7', color: '#D97706' };
+      return { label: t('inventory.lowStock'), bg: '#FEF3C7', color: '#D97706' };
     }
-    return { label: 'IN STOCK', bg: '#ECFDF5', color: '#059669' };
+    return { label: t('inventory.inStock'), bg: '#ECFDF5', color: '#059669' };
   };
 
   return (
-    <View style={styles.container}>
+    <Screen edges={['bottom']} scroll={false} style={styles.container}>
       {/* Top Header */}
       <View style={styles.header}>
         <View>
@@ -317,14 +321,14 @@ export const InventoryScreen: React.FC = () => {
 
               <View style={styles.cardFooter}>
                 <Text style={styles.lastAdjustedText}>
-                  Cost: ₹{item.unitCost}/{item.unit}
+                  {t('inventory.costPer', { cost: item.unitCost, unit: item.unit })}
                 </Text>
 
                 <TouchableOpacity
                   style={styles.adjustBtn}
                   onPress={() => handleOpenAdjust(item)}
                 >
-                  <Text style={styles.adjustBtnText}>± Adjust Stock</Text>
+                  <Text style={styles.adjustBtnText}>{t('inventory.adjustBtn')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -346,7 +350,7 @@ export const InventoryScreen: React.FC = () => {
         transparent
         onRequestClose={() => setIsAdjustModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>{t('inventory.adjustTitle')}</Text>
             {selectedItem && (
@@ -379,7 +383,7 @@ export const InventoryScreen: React.FC = () => {
                         },
                       ]}
                     >
-                      {opt.label}
+                      {t(opt.label)}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -387,14 +391,14 @@ export const InventoryScreen: React.FC = () => {
 
               <Text style={styles.inputLabel}>
                 {adjustmentType === 'AUDIT_CORRECTION'
-                  ? 'New Verified Physical Count'
-                  : 'Adjustment Quantity'}
+                  ? t('inventory.newCount')
+                  : t('inventory.adjustQty')}
               </Text>
               <TextInput
                 style={styles.modalInput}
-                keyboardType="numeric"
+                keyboardType="decimal-pad"
                 value={adjustQuantity}
-                onChangeText={setAdjustQuantity}
+                onChangeText={(v) => setAdjustQuantity(sanitizeDecimalInput(v, 3))}
                 placeholder={t('inventory.qtyPlaceholder')}
               />
 
@@ -423,9 +427,9 @@ export const InventoryScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </Screen>
   );
 };
 

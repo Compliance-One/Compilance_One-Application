@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { getDb } from '../db/schema';
 import { useAppStore } from '../store/useAppStore';
@@ -63,6 +64,18 @@ export function useReport<T>(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tick, storeBusiness?.id, ...deps]);
+
+  // Re-query when the screen comes back into view (e.g. after saving a bill).
+  const firstFocus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (firstFocus.current) {
+        firstFocus.current = false;
+        return;
+      }
+      setTick((n) => n + 1);
+    }, [])
+  );
 
   return { state, reload: () => setTick((n) => n + 1) };
 }

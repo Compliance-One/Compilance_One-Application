@@ -9,9 +9,12 @@ import {
   Modal,
   Alert,
   ScrollView,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
+import { Screen } from '../../ui';
+import { DecimalInput } from '../../ui/DecimalInput';
 import { useAppStore } from '../../store/useAppStore';
 import { getDb } from '../../db/schema';
 import { deleteProduct, listProducts, upsertProduct } from '../../db/repositories';
@@ -66,7 +69,7 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
     unit: 'PCS',
     sellingPrice: 0,
     purchasePrice: 0,
-    taxRate: 18,
+    taxRate: 0,
     currentStock: 0,
     minStockLevel: 5,
   });
@@ -95,7 +98,7 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
       unit: 'PCS',
       sellingPrice: 0,
       purchasePrice: 0,
-      taxRate: 18,
+      taxRate: 0,
       currentStock: 0,
       minStockLevel: 5,
     });
@@ -160,16 +163,16 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
 
   const getStockBadge = (stock: number, min: number) => {
     if (stock <= 0) {
-      return { label: 'OUT OF STOCK', bg: '#FEE2E2', text: '#DC2626' };
+      return { label: t('products.outOfStock'), bg: '#FEE2E2', text: '#DC2626' };
     }
     if (stock <= min) {
-      return { label: `LOW (${stock})`, bg: '#FEF3C7', text: '#D97706' };
+      return { label: t('products.lowStock', { count: stock }), bg: '#FEF3C7', text: '#D97706' };
     }
-    return { label: `${stock} In Stock`, bg: '#ECFDF5', text: '#059669' };
+    return { label: t('products.inStock', { count: stock }), bg: '#ECFDF5', text: '#059669' };
   };
 
   return (
-    <View style={styles.container}>
+    <Screen edges={['top']} scroll={false} style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <View>
@@ -177,7 +180,7 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
           <Text style={styles.subTitle}>{t('products.subtitle')}</Text>
         </View>
         <TouchableOpacity style={styles.addBtn} onPress={handleOpenAddModal}>
-          <Text style={styles.addBtnText}>+ Add Product</Text>
+          <Text style={styles.addBtnText}>{t('products.addBtn')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -215,7 +218,7 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
                   selectedCategory === cat && styles.categoryChipTextActive,
                 ]}
               >
-                {cat}
+                {t(`products.categories.${cat.replace(/\s+/g, '')}`, { defaultValue: cat })}
               </Text>
             </TouchableOpacity>
           ))}
@@ -246,13 +249,13 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
 
               <View style={styles.metaRow}>
                 <View style={styles.pillContainer}>
-                  <Text style={styles.pillText}>HSN: {item.hsnCode || t('products.na')}</Text>
+                  <Text style={styles.pillText}>{t('products.hsnPill', { value: item.hsnCode || t('products.na') })}</Text>
                 </View>
                 <View style={styles.pillContainer}>
-                  <Text style={styles.pillText}>GST: {item.taxRate}%</Text>
+                  <Text style={styles.pillText}>{t('products.gstPill', { rate: item.taxRate })}</Text>
                 </View>
                 <View style={styles.pillContainer}>
-                  <Text style={styles.pillText}>Unit: {item.unit}</Text>
+                  <Text style={styles.pillText}>{t('products.unitPill', { unit: item.unit })}</Text>
                 </View>
               </View>
 
@@ -301,12 +304,12 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
         transparent
         onRequestClose={() => setIsModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalHeading}>
               {products.some((p) => p.id === formData.id)
-                ? 'Edit Catalog Product'
-                : 'Add New Product'}
+                ? t('products.editTitle')
+                : t('products.addTitle')}
             </Text>
 
             <ScrollView showsVerticalScrollIndicator={false}>
@@ -368,30 +371,20 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
               <View style={styles.formRow}>
                 <View style={{ flex: 1, marginRight: 8 }}>
                   <Text style={styles.inputLabel}>{t('products.sellingPriceStar')}</Text>
-                  <TextInput
+                  <DecimalInput
                     style={styles.modalInput}
-                    value={formData.sellingPrice.toString()}
-                    keyboardType="numeric"
-                    onChangeText={(val) =>
-                      setFormData({
-                        ...formData,
-                        sellingPrice: parseFloat(val) || 0,
-                      })
-                    }
+                    value={formData.sellingPrice}
+                    decimals={2}
+                    onValue={(n) => setFormData((prev) => ({ ...prev, sellingPrice: n }))}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.inputLabel}>{t('products.purchaseCostRs')}</Text>
-                  <TextInput
+                  <DecimalInput
                     style={styles.modalInput}
-                    value={formData.purchasePrice.toString()}
-                    keyboardType="numeric"
-                    onChangeText={(val) =>
-                      setFormData({
-                        ...formData,
-                        purchasePrice: parseFloat(val) || 0,
-                      })
-                    }
+                    value={formData.purchasePrice}
+                    decimals={2}
+                    onValue={(n) => setFormData((prev) => ({ ...prev, purchasePrice: n }))}
                   />
                 </View>
               </View>
@@ -422,30 +415,20 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
               <View style={styles.formRow}>
                 <View style={{ flex: 1, marginRight: 8 }}>
                   <Text style={styles.inputLabel}>{t('products.currentStock')}</Text>
-                  <TextInput
+                  <DecimalInput
                     style={styles.modalInput}
-                    value={formData.currentStock.toString()}
-                    keyboardType="numeric"
-                    onChangeText={(val) =>
-                      setFormData({
-                        ...formData,
-                        currentStock: parseInt(val, 10) || 0,
-                      })
-                    }
+                    value={formData.currentStock}
+                    decimals={3}
+                    onValue={(n) => setFormData((prev) => ({ ...prev, currentStock: n }))}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.inputLabel}>{t('products.minReorder')}</Text>
-                  <TextInput
+                  <DecimalInput
                     style={styles.modalInput}
-                    value={formData.minStockLevel.toString()}
-                    keyboardType="numeric"
-                    onChangeText={(val) =>
-                      setFormData({
-                        ...formData,
-                        minStockLevel: parseInt(val, 10) || 0,
-                      })
-                    }
+                    value={formData.minStockLevel}
+                    decimals={3}
+                    onValue={(n) => setFormData((prev) => ({ ...prev, minStockLevel: n }))}
                   />
                 </View>
               </View>
@@ -466,9 +449,9 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </Screen>
   );
 };
 

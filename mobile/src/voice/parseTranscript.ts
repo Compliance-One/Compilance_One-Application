@@ -476,7 +476,8 @@ export function parseTranscript(
       quantity: raw.quantity,
       unit: product?.unit || raw.unit,
       unitPrice: raw.unitPrice ?? product?.sellingPrice,
-      taxRate: raw.taxRate ?? product?.taxRate ?? 18,
+      // Unknown items default to 0% GST; the owner can change it on the bill.
+      taxRate: raw.taxRate ?? product?.taxRate ?? 0,
       productId: product?.id,
       hsnCode: product?.hsnCode,
       matchedProductName: product?.name,

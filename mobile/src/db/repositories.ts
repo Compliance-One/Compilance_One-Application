@@ -70,7 +70,8 @@ export interface CreateInvoiceInput {
   dueDate?: string | null;
   paymentTermsDays?: number;
   inputMode: 'voice' | 'text';
-  customer: {
+  /** null/undefined or an empty name = walk-in sale (no customer record, no ledger entry). */
+  customer?: {
     id?: string;
     name: string;
     gstin?: string;
@@ -78,7 +79,7 @@ export interface CreateInvoiceInput {
     email?: string;
     stateCode?: string;
     address?: string;
-  };
+  } | null;
   items: InvoiceLineInput[];
 }
 
@@ -363,7 +364,7 @@ async function findOrCreateCustomer(
   db: SQLiteDatabase,
   outbox: OutboxRepository,
   businessId: string,
-  customer: CreateInvoiceInput['customer']
+  customer: NonNullable<CreateInvoiceInput['customer']>
 ): Promise<string> {
   if (customer.id) {
     const existing = await db.getFirstAsync<{ id: string }>(`SELECT id FROM customers WHERE id = ?`, [customer.id]);
@@ -467,13 +468,14 @@ export async function createInvoice(db: SQLiteDatabase, input: CreateInvoiceInpu
     discountPercent: it.discountPercent ?? 0,
   }));
   const { lines, summary } = calculateInvoiceTotals(gstInputs, input.sellerStateCode, input.buyerStateCode);
-  const invoiceType = input.customer.gstin ? 'B2B' : 'B2C';
+  const buyer = input.customer && input.customer.name?.trim() ? input.customer : null;
+  const invoiceType = buyer?.gstin ? 'B2B' : 'B2C';
   const dueDate =
     input.dueDate ?? (input.paymentTermsDays ? addDays(input.invoiceDate, input.paymentTermsDays) : addDays(input.invoiceDate, 15));
   const invoiceId = newId();
 
   await db.withTransactionAsync(async () => {
-    const customerId = await findOrCreateCustomer(db, outbox, input.businessId, input.customer);
+    const customerId = buyer ? await findOrCreateCustomer(db, outbox, input.businessId, buyer) : null;
 
     const invoicePayload = {
       id: invoiceId,
@@ -573,6 +575,8 @@ export async function createInvoice(db: SQLiteDatabase, input: CreateInvoiceInpu
       }
     }
 
+    // Walk-in sales have no customer account, so nothing goes on the ledger.
+    if (!customerId) return;
     const ledgerId = newId();
     const ledgerPayload = {
       id: ledgerId,
@@ -879,4 +883,282 @@ export async function getInvoiceDetail(db: SQLiteDatabase, invoiceId: string): P
       lineTotal: Number(it.line_total ?? 0),
     })),
   };
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Payments                                                            */
+/* ------------------------------------------------------------------ */
+
+export type SimplePaymentMode = 'CASH' | 'UPI' | 'BANK';
+
+export interface RecordPaymentInput {
+  businessId: string;
+  invoiceId: string;
+  amount: number;
+  mode: SimplePaymentMode;
+  paymentDate?: string;
+}
+
+/** Round to paise so float noise never leaves 0.0000001 owed. */
+function paise(n: number): number {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/** Status from bill total and money received so far. */
+export function statusForAmounts(total: number, paid: number): 'PAID' | 'PARTIAL' | 'UNPAID' {
+  const t = paise(total);
+  const p = paise(paid);
+  if (p <= 0) return 'UNPAID';
+  if (p + 0.005 >= t) return 'PAID';
+  return 'PARTIAL';
+}
+
+/**
+ * Body of recordPayment without its own transaction (so callers can batch).
+ * Writes the payment, a ledger credit for the customer (if the bill has one),
+ * updates the invoice payment_status, and enqueues all three for sync.
+ * Returns the payment id, or null when nothing was recorded.
+ */
+async function recordPaymentRows(
+  db: SQLiteDatabase,
+  outbox: OutboxRepository,
+  input: RecordPaymentInput
+): Promise<string | null> {
+  const amount = paise(input.amount);
+  if (!(amount > 0)) return null;
+  const inv = await db.getFirstAsync<Record<string, unknown>>(
+    `SELECT * FROM invoices WHERE id = ? AND business_id = ?`,
+    [input.invoiceId, input.businessId]
+  );
+  if (!inv) throw new Error('Bill not found on this device.');
+  const date = input.paymentDate ?? localISODate();
+  const mode = input.mode;
+  const paymentId = newId();
+
+  await db.runAsync(
+    `INSERT INTO payments (id, invoice_id, amount, payment_mode, payment_date, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    [paymentId, input.invoiceId, amount, mode, date]
+  );
+  await outbox.enqueue(
+    'payments',
+    paymentId,
+    'INSERT',
+    toSyncPayload('payments', {
+      id: paymentId,
+      invoice_id: input.invoiceId,
+      amount,
+      payment_mode: mode,
+      payment_date: date,
+      created_at: date,
+    })
+  );
+
+  const customerId = (inv.customer_id as string | null) ?? null;
+  if (customerId) {
+    const ledgerId = newId();
+    const description = `Payment ${String(inv.invoice_number ?? '')} (${mode})`.trim();
+    await db.runAsync(
+      `INSERT INTO ledger_entries (
+         id, business_id, customer_id, invoice_id, payment_id, debit, credit, description, entry_date, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [ledgerId, input.businessId, customerId, input.invoiceId, paymentId, amount, description, date]
+    );
+    await outbox.enqueue(
+      'ledger_entries',
+      ledgerId,
+      'INSERT',
+      toSyncPayload('ledger_entries', {
+        id: ledgerId,
+        business_id: input.businessId,
+        customer_id: customerId,
+        invoice_id: input.invoiceId,
+        payment_id: paymentId,
+        debit: 0,
+        credit: amount,
+        description,
+        entry_date: date,
+      })
+    );
+  }
+
+  const paidRow = await db.getFirstAsync<{ paid: number }>(
+    `SELECT COALESCE(SUM(amount), 0) AS paid FROM payments WHERE invoice_id = ?`,
+    [input.invoiceId]
+  );
+  const status = statusForAmounts(Number(inv.total_amount ?? 0), Number(paidRow?.paid ?? 0));
+  await db.runAsync(`UPDATE invoices SET payment_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [
+    status,
+    input.invoiceId,
+  ]);
+  await outbox.enqueue(
+    'invoices',
+    input.invoiceId,
+    'UPDATE',
+    toSyncPayload('invoices', { ...inv, payment_status: status })
+  );
+  return paymentId;
+}
+
+/** Record money received against one bill. */
+export async function recordPayment(db: SQLiteDatabase, input: RecordPaymentInput): Promise<string | null> {
+  const outbox = new OutboxRepository(db);
+  let id: string | null = null;
+  await db.withTransactionAsync(async () => {
+    id = await recordPaymentRows(db, outbox, input);
+  });
+  return id;
+}
+
+/**
+ * "Customer gave ₹X": spread it over their unpaid bills, oldest first.
+ * Returns the amount actually applied (never more than they owe).
+ */
+export async function receiveFromCustomer(
+  db: SQLiteDatabase,
+  input: { businessId: string; customerId: string; amount: number; mode: SimplePaymentMode; paymentDate?: string }
+): Promise<number> {
+  const outbox = new OutboxRepository(db);
+  let remaining = paise(input.amount);
+  let applied = 0;
+  if (!(remaining > 0)) return 0;
+  await db.withTransactionAsync(async () => {
+    const bills = await db.getAllAsync<{ id: string; total_amount: number; paid: number }>(
+      `SELECT i.id, i.total_amount,
+              COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0) AS paid
+       FROM invoices i
+       WHERE i.business_id = ? AND i.customer_id = ? AND UPPER(i.payment_status) != 'CANCELLED'
+       ORDER BY i.invoice_date, i.created_at`,
+      [input.businessId, input.customerId]
+    );
+    for (const b of bills) {
+      if (remaining <= 0) break;
+      const due = paise(Number(b.total_amount) - Number(b.paid));
+      if (due <= 0) continue;
+      const pay = Math.min(due, remaining);
+      await recordPaymentRows(db, outbox, {
+        businessId: input.businessId,
+        invoiceId: b.id,
+        amount: pay,
+        mode: input.mode,
+        paymentDate: input.paymentDate,
+      });
+      remaining = paise(remaining - pay);
+      applied = paise(applied + pay);
+    }
+  });
+  return applied;
+}
+
+/* ------------------------------------------------------------------ */
+/* Simple-UI read models                                               */
+/* ------------------------------------------------------------------ */
+
+export interface DaySummary {
+  billsCount: number;
+  salesTotal: number;
+  cashReceived: number;
+  upiReceived: number;
+  creditGiven: number;
+  owedToYou: number;
+}
+
+/** Today's (or any day's) bills and money, plus total owed by all customers. */
+export async function getDaySummary(db: SQLiteDatabase, businessId: string, day: string = localISODate()): Promise<DaySummary> {
+  const bills = await db.getFirstAsync<{ n: number; total: number; due: number }>(
+    `SELECT COUNT(*) AS n, COALESCE(SUM(i.total_amount), 0) AS total,
+            COALESCE(SUM(MAX(0, i.total_amount - COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0))), 0) AS due
+     FROM invoices i
+     WHERE i.business_id = ? AND i.invoice_date = ? AND UPPER(i.payment_status) != 'CANCELLED'`,
+    [businessId, day]
+  );
+  const money = await db.getAllAsync<{ mode: string; amt: number }>(
+    `SELECT UPPER(COALESCE(p.payment_mode, 'CASH')) AS mode, COALESCE(SUM(p.amount), 0) AS amt
+     FROM payments p JOIN invoices i ON i.id = p.invoice_id
+     WHERE i.business_id = ? AND p.payment_date = ?
+     GROUP BY UPPER(COALESCE(p.payment_mode, 'CASH'))`,
+    [businessId, day]
+  );
+  const owed = await db.getFirstAsync<{ owed: number }>(
+    `SELECT COALESCE(SUM(CASE WHEN balance < 0 THEN -balance ELSE 0 END), 0) AS owed
+     FROM v_customer_balances WHERE business_id = ?`,
+    [businessId]
+  );
+  let cash = 0;
+  let upi = 0;
+  for (const m of money) {
+    if (m.mode === 'CASH') cash += Number(m.amt) || 0;
+    else upi += Number(m.amt) || 0;
+  }
+  return {
+    billsCount: Number(bills?.n ?? 0),
+    salesTotal: Number(bills?.total ?? 0),
+    cashReceived: paise(cash),
+    upiReceived: paise(upi),
+    creditGiven: paise(Number(bills?.due ?? 0)),
+    owedToYou: paise(Number(owed?.owed ?? 0)),
+  };
+}
+
+export interface DayBillRow {
+  id: string;
+  invoiceNumber: string;
+  customerName: string | null;
+  totalAmount: number;
+  paid: number;
+  paymentStatus: string;
+}
+
+export async function listBillsForDay(db: SQLiteDatabase, businessId: string, day: string = localISODate()): Promise<DayBillRow[]> {
+  const rows = await db.getAllAsync<Record<string, unknown>>(
+    `SELECT i.id, i.invoice_number, c.name AS customer_name, i.total_amount, i.payment_status,
+            COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0) AS paid
+     FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id
+     WHERE i.business_id = ? AND i.invoice_date = ? AND UPPER(i.payment_status) != 'CANCELLED'
+     ORDER BY i.created_at DESC`,
+    [businessId, day]
+  );
+  return rows.map((r) => ({
+    id: String(r.id),
+    invoiceNumber: String(r.invoice_number ?? ''),
+    customerName: (r.customer_name as string | null) ?? null,
+    totalAmount: Number(r.total_amount ?? 0),
+    paid: Number(r.paid ?? 0),
+    paymentStatus: String(r.payment_status ?? 'UNPAID'),
+  }));
+}
+
+export interface CustomerBillRow {
+  id: string;
+  invoiceNumber: string;
+  date: string;
+  totalAmount: number;
+  paid: number;
+  due: number;
+  paymentStatus: string;
+}
+
+export async function listCustomerBills(db: SQLiteDatabase, businessId: string, customerId: string): Promise<CustomerBillRow[]> {
+  const rows = await db.getAllAsync<Record<string, unknown>>(
+    `SELECT i.id, i.invoice_number, i.invoice_date, i.total_amount, i.payment_status,
+            COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0) AS paid
+     FROM invoices i
+     WHERE i.business_id = ? AND i.customer_id = ? AND UPPER(i.payment_status) != 'CANCELLED'
+     ORDER BY i.invoice_date DESC, i.created_at DESC`,
+    [businessId, customerId]
+  );
+  return rows.map((r) => {
+    const total = Number(r.total_amount ?? 0);
+    const paid = Number(r.paid ?? 0);
+    return {
+      id: String(r.id),
+      invoiceNumber: String(r.invoice_number ?? ''),
+      date: String(r.invoice_date ?? ''),
+      totalAmount: total,
+      paid,
+      due: Math.max(0, paise(total - paid)),
+      paymentStatus: String(r.payment_status ?? 'UNPAID'),
+    };
+  });
 }

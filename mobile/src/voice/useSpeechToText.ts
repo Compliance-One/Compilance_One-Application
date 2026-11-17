@@ -1,5 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CONFIG } from '../config/env';
+import i18n from '../i18n';
+
+/** Friendly, translated text for a recogniser error code. */
+export function friendlySpeechError(code: string | undefined): string {
+  switch (code) {
+    case 'not-allowed':
+      return i18n.t('voice.errPermission');
+    case 'network':
+      return i18n.t('voice.errNetwork');
+    case 'no-speech':
+    case 'speech-timeout':
+      return i18n.t('voice.errNoSpeech');
+    case 'busy':
+      return i18n.t('voice.errBusy');
+    case 'audio-capture':
+      return i18n.t('voice.errMic');
+    default:
+      // language-not-supported, service-not-allowed, client, unknown: the
+      // speech engine or its language pack is missing on this phone.
+      return i18n.t('voice.errUnavailable');
+  }
+}
 
 export type SpeechLocale = 'ta-IN' | 'en-IN';
 export type ListenState = 'idle' | 'requesting' | 'listening' | 'stopping' | 'error';
@@ -84,7 +106,7 @@ export function useSpeechToText(lang: SpeechLocale) {
     const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
     if (!perm.granted) {
       setState('error');
-      setError('Microphone or speech-recognition permission was denied. Enable it in system settings.');
+      setError(friendlySpeechError('not-allowed'));
       return;
     }
 
@@ -122,9 +144,16 @@ export function useSpeechToText(lang: SpeechLocale) {
           return;
         }
         setState('error');
-        setError(event.message || `Speech recognition error: ${code}`);
+        if (__DEV__) console.warn('[voice] recogniser error', code, event.message);
+        setError(friendlySpeechError(code));
       }),
     ];
+
+    if (ExpoSpeechRecognitionModule.isRecognitionAvailable && !ExpoSpeechRecognitionModule.isRecognitionAvailable()) {
+      setState('error');
+      setError(friendlySpeechError('service-not-allowed'));
+      return;
+    }
 
     const supportsOnDevice =
       !forceNetwork && (ExpoSpeechRecognitionModule.supportsOnDeviceRecognition?.() ?? false);
@@ -153,12 +182,9 @@ export function useSpeechToText(lang: SpeechLocale) {
     try {
       await startNative(false);
     } catch (e) {
+      if (__DEV__) console.warn('[voice] start failed', e);
       setState('error');
-      setError(
-        e instanceof Error
-          ? e.message
-          : 'Speech recognition is only available in a development build, not in Expo Go.'
-      );
+      setError(friendlySpeechError('service-not-allowed'));
     }
   }, [startMock, startNative]);
 
