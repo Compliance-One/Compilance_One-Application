@@ -196,7 +196,6 @@ export const InventoryScreen: React.FC = () => {
       {/* Top Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>{t('inventory.title')}</Text>
           <Text style={styles.subTitle}>{t('inventory.subtitle')}</Text>
         </View>
       </View>

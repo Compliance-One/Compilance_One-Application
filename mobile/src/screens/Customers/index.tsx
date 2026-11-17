@@ -193,7 +193,6 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>{t('customers.title')}</Text>
           <Text style={styles.subTitle}>{t('customers.subtitle')}</Text>
         </View>
         <TouchableOpacity style={styles.addBtn} onPress={handleOpenAddModal}>

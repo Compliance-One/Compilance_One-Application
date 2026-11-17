@@ -40,13 +40,13 @@ export default function HomeScreen() {
   );
 
   const goTab = (screen: string) => navigation.navigate('MainTabs', { screen });
-  const tiles: Array<{ key: string; icon: string; onPress: () => void; color?: string; tint?: string }> = [
-    { key: 'home.newBill', icon: '🧾', onPress: () => navigation.navigate('InvoiceCreate') },
-    { key: 'home.moneyIn', icon: '💰', onPress: () => navigation.navigate('Ledger'), color: ui.good, tint: ui.goodTint },
-    { key: 'home.today', icon: '📅', onPress: () => goTab('Invoices') },
-    { key: 'home.credit', icon: '📒', onPress: () => navigation.navigate('Customers'), color: ui.turmericDeep, tint: ui.turmericTint },
-    { key: 'home.items', icon: '📦', onPress: () => goTab('Products') },
-    { key: 'home.more', icon: '☰', onPress: () => goTab('Reports') },
+  const tiles: Array<{ key: string; icon: string; onPress: () => void; color: string; tint: string }> = [
+    { key: 'home.newBill', icon: '🧾', onPress: () => goTab('Bill'), color: '#0E4D3A', tint: '#D7F0E3' },
+    { key: 'home.moneyIn', icon: '💰', onPress: () => navigation.navigate('Ledger'), color: '#1B6E3A', tint: '#DDF5D9' },
+    { key: 'home.today', icon: '📅', onPress: () => navigation.navigate('Invoices'), color: '#1D4F91', tint: '#DCE9FB' },
+    { key: 'home.credit', icon: '📒', onPress: () => goTab('Credit'), color: '#8A5A00', tint: '#FBEFCF' },
+    { key: 'home.items', icon: '📦', onPress: () => goTab('Items'), color: '#7A3E9D', tint: '#EFE2F8' },
+    { key: 'home.more', icon: '✨', onPress: () => goTab('More'), color: '#A9402C', tint: '#FBE3DC' },
   ];
 
   const cash = summary ? summary.cashReceived + summary.upiReceived : 0;
@@ -80,7 +80,7 @@ export default function HomeScreen() {
         label={bi('home.voiceBill')[0]}
         sublabel={bi('home.voiceBill')[1]}
         variant="secondary"
-        onPress={() => navigation.navigate('VoiceBilling')}
+        onPress={() => goTab('Bill')}
       />
     </Screen>
   );

@@ -602,5 +602,27 @@
     "placeholder": "Type item name or code (rice, arisi, 1006)",
     "none": "No match. You can leave HSN empty.",
     "note": "GST rate shown is typical. Check with your auditor if unsure."
+  },
+  "more": {
+    "title": "More",
+    "bills": "All bills",
+    "fullBill": "Full GST bill form",
+    "gstJson": "GST JSON download",
+    "month": "This month summary",
+    "reports": "Reports",
+    "profit": "Profit & loss",
+    "balance": "Balance sheet",
+    "ledger": "Customer ledger / money in",
+    "stock": "Stock",
+    "settings": "Settings, printer, language",
+    "logout": "Log out",
+    "logoutConfirm": "Log out from this phone?"
+  },
+  "tabs2": {
+    "home": "Home",
+    "bill": "Bill",
+    "credit": "Credit",
+    "items": "Items",
+    "more": "More"
   }
 }

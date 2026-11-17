@@ -27,6 +27,9 @@ export type RootStackParamList = {
   MainTabs: NavigatorScreenParams<MainTabParamList> | undefined;
   VoiceBilling: undefined;
   InvoiceCreate: InvoiceCreateParams | undefined;
+  Invoices: undefined;
+  Reports: undefined;
+  Settings: undefined;
   Customers: undefined;
   Inventory: undefined;
   MonthSummary: undefined;
@@ -38,10 +41,10 @@ export type RootStackParamList = {
 
 export type MainTabParamList = {
   Dashboard: undefined;
-  Invoices: undefined;
-  Products: undefined;
-  Reports: undefined;
-  Settings: undefined;
+  Bill: undefined;
+  Credit: undefined;
+  Items: undefined;
+  More: undefined;
 };
 
 /** Legacy route names used by the reports screens via ScreenProps. */
@@ -69,10 +72,10 @@ export interface ScreenProps {
 
 export const ROUTE_MAP: Record<RouteName, keyof RootStackParamList | { tab: keyof MainTabParamList }> = {
   dashboard: { tab: 'Dashboard' },
-  reports: { tab: 'Reports' },
-  settings: { tab: 'Settings' },
-  invoices: { tab: 'Invoices' },
-  products: { tab: 'Products' },
+  reports: 'Reports',
+  settings: 'Settings',
+  invoices: 'Invoices',
+  products: { tab: 'Items' },
   ledger: 'Ledger',
   gstr1: 'GSTR1Export',
   profitLoss: 'ProfitLoss',

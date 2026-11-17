@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
+import { Screen } from '../../ui';
 import { InvoiceCard, InvoiceCardData, InvoiceStatus, formatINR } from '../../components/InvoiceCard';
 import { useAppStore } from '../../store/useAppStore';
 import { getDb } from '../../db/schema';
@@ -131,11 +132,10 @@ export const InvoicesListScreen: React.FC<{ navigation?: any }> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <Screen edges={['bottom']} scroll={false} style={styles.container}>
       {/* Top Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>{t('tabs.invoices')}</Text>
           <Text style={styles.subTitle}>{t('invoices.subtitle')}</Text>
         </View>
 
@@ -242,7 +242,7 @@ export const InvoicesListScreen: React.FC<{ navigation?: any }> = ({
           </View>
         }
       />
-    </View>
+    </Screen>
   );
 };
 

@@ -1,9 +1,12 @@
-import React from 'react';
+import React, { createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
 import { KeyboardAvoidingView, ScrollView, StyleSheet, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 import { sp, ui } from './tokens';
+
+/** Set by the tab navigator: the tab bar already handles the bottom inset. */
+export const InTabContext = createContext(false);
 
 export interface ScreenProps {
   children: ReactNode;
@@ -33,8 +36,10 @@ export function Screen({
   contentStyle,
   keyboardOffset = 0,
 }: ScreenProps) {
+  const inTab = useContext(InTabContext);
+  const finalEdges = inTab ? edges.filter((e) => e !== 'bottom') : edges;
   return (
-    <SafeAreaView edges={edges} style={[s.root, style]}>
+    <SafeAreaView edges={finalEdges} style={[s.root, style]}>
       <KeyboardAvoidingView
         style={s.flex}
         // Android is edge-to-edge (the window is not resized), so pad on both platforms.

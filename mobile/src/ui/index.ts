@@ -1,4 +1,4 @@
-export { Screen } from './Screen';
+export { Screen, InTabContext } from './Screen';
 export { Header } from './Header';
 export { BigButton } from './BigButton';
 export { Tile } from './Tile';
