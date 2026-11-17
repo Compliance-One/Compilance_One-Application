@@ -79,6 +79,9 @@ export default function DashboardScreen({ navigate }: ScreenProps) {
                 <StatTile label={t('dashboard.gstCollected')} value={formatINR(summary.totalGst)} />
               </View>
               <View style={s.grid}>
+                <StatTile label={t('dashboard.billedInclGst')} value={formatINR(summary.totalSales)} />
+              </View>
+              <View style={s.grid}>
                 <StatTile
                   label={t('dashboard.customersOweYou')}
                   value={formatINR(bs.receivables)}
@@ -89,6 +92,10 @@ export default function DashboardScreen({ navigate }: ScreenProps) {
 
               <SectionTitle>{t('dashboard.moreTitle')}</SectionTitle>
               <Card style={{ padding: 0, overflow: 'hidden' }}>
+                <NavRow title={t('dashboard.voiceBilling')} hint={t('dashboard.voiceBillingHint')} onPress={() => navigate('voiceBilling')} />
+                <NavRow title={t('dashboard.newInvoice')} hint={t('dashboard.newInvoiceHint')} onPress={() => navigate('invoiceCreate')} />
+                <NavRow title={t('tabs.customers')} hint={t('dashboard.customersHint')} onPress={() => navigate('customers')} />
+                <NavRow title={t('tabs.inventory')} hint={t('dashboard.inventoryHint')} onPress={() => navigate('inventory')} />
                 <NavRow title={t('tabs.reports')} hint={t('dashboard.reportsHint')} onPress={() => navigate('reports')} />
                 <NavRow title={t('tabs.ledger')} hint={t('dashboard.ledgerHint')} onPress={() => navigate('ledger')} />
                 <NavRow title={t('profitLoss.title')} hint={t('dashboard.plHint')} onPress={() => navigate('profitLoss')} />

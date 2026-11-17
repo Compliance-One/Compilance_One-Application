@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,6 +10,14 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { useTranslation } from 'react-i18next';
+import { useAppStore } from '../../store/useAppStore';
+import { getDb } from '../../db/schema';
+import { listCustomers, upsertCustomer } from '../../db/repositories';
+import { newId } from '../../lib/id';
+import { INDIAN_STATES, isValidGstin, normalizeStateCode, stateNameFor } from '../../lib/gst';
+import { CONFIG } from '../../config/env';
 
 export interface Customer {
   id: string;
@@ -26,79 +34,24 @@ export interface Customer {
   creditLimit: number;
 }
 
-const INITIAL_CUSTOMERS: Customer[] = [
-  {
-    id: 'cust_1',
-    name: 'Bharat Industrial Supplies LLP',
-    tradeName: 'Bharat Supplies',
-    gstin: '27AABCB9876Q1ZB',
-    pan: 'AABCB9876Q',
-    phone: '+91 98220 12345',
-    email: 'accounts@bharatsupplies.com',
-    stateCode: '27',
-    stateName: 'Maharashtra',
-    billingAddress: 'Gala 102, Shanti Industrial Estate, Thane West, MH - 400601',
-    outstandingBalance: 148500,
-    creditLimit: 500000,
-  },
-  {
-    id: 'cust_2',
-    name: 'Bangalore Precision Forge Pvt Ltd',
-    tradeName: 'Bangalore Forge',
-    gstin: '29AACCH5678Q1Z2',
-    pan: 'AACCH5678Q',
-    phone: '+91 98450 78901',
-    email: 'billing@bengaluruforge.in',
-    stateCode: '29',
-    stateName: 'Karnataka',
-    billingAddress: 'Plot 44, Peenya 3rd Phase, Bangalore, KA - 560058',
-    outstandingBalance: 384200,
-    creditLimit: 1000000,
-  },
-  {
-    id: 'cust_3',
-    name: 'Rajesh Enterprises (Proprietor)',
-    tradeName: 'Rajesh Electricals',
-    gstin: '', // Unregistered consumer / composition
-    pan: 'BQZPR9912K',
-    phone: '+91 99300 45678',
-    email: 'rajeshelectricals@gmail.com',
-    stateCode: '27',
-    stateName: 'Maharashtra',
-    billingAddress: 'Shop 4, Station Road, Kalyan, MH - 421301',
-    outstandingBalance: 0,
-    creditLimit: 100000,
-  },
-  {
-    id: 'cust_4',
-    name: 'Capital Infrastructure Limited',
-    tradeName: 'Capital Infra',
-    gstin: '07AAECM7890K1Z9',
-    pan: 'AAECM7890K',
-    phone: '+91 98110 55443',
-    email: 'tax@capitalinfra.in',
-    stateCode: '07',
-    stateName: 'Delhi',
-    billingAddress: 'Building 12, Barakhamba Road, Connaught Place, New Delhi - 110001',
-    outstandingBalance: 512000,
-    creditLimit: 2500000,
-  },
-];
 
-const INDIAN_STATES = [
-  { code: '27', name: 'Maharashtra' },
-  { code: '29', name: 'Karnataka' },
-  { code: '07', name: 'Delhi' },
-  { code: '24', name: 'Gujarat' },
-  { code: '33', name: 'Tamil Nadu' },
-  { code: '36', name: 'Telangana' },
-  { code: '19', name: 'West Bengal' },
-  { code: '09', name: 'Uttar Pradesh' },
-  { code: '06', name: 'Haryana' },
-];
 
 export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
-  const [customers, setCustomers] = useState<Customer[]>(INITIAL_CUSTOMERS);
+  const { t } = useTranslation();
+  const businessId = useAppStore((s) => s.business?.id);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+
+  const reload = useCallback(async () => {
+    if (!businessId) return;
+    const db = await getDb();
+    setCustomers(await listCustomers(db, businessId));
+  }, [businessId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void reload();
+    }, [reload])
+  );
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterType, setFilterType] = useState<'ALL' | 'WITH_GSTIN' | 'OUTSTANDING'>('ALL');
   const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
@@ -112,8 +65,8 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
     pan: '',
     phone: '',
     email: '',
-    stateCode: '27',
-    stateName: 'Maharashtra',
+    stateCode: CONFIG.DEFAULT_STATE_CODE,
+    stateName: stateNameFor(CONFIG.DEFAULT_STATE_CODE),
     billingAddress: '',
     outstandingBalance: 0,
     creditLimit: 200000,
@@ -147,11 +100,10 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
     let pan = formData.pan;
 
     if (clean.length >= 2) {
-      const code = clean.substring(0, 2);
-      const match = INDIAN_STATES.find((s) => s.code === code);
-      if (match) {
-        stateCode = match.code;
-        stateName = match.name;
+      const code = normalizeStateCode(clean.substring(0, 2));
+      if (code) {
+        stateCode = code;
+        stateName = stateNameFor(code);
       }
     }
 
@@ -170,15 +122,15 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
 
   const handleOpenAddModal = () => {
     setFormData({
-      id: `cust_${Date.now()}`,
+      id: newId(),
       name: '',
       tradeName: '',
       gstin: '',
       pan: '',
       phone: '',
       email: '',
-      stateCode: '27',
-      stateName: 'Maharashtra',
+      stateCode: CONFIG.DEFAULT_STATE_CODE,
+      stateName: stateNameFor(CONFIG.DEFAULT_STATE_CODE),
       billingAddress: '',
       outstandingBalance: 0,
       creditLimit: 200000,
@@ -201,21 +153,29 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
       return;
     }
 
-    const existingIndex = customers.findIndex((c) => c.id === formData.id);
-    if (existingIndex >= 0) {
-      const updated = [...customers];
-      updated[existingIndex] = formData;
-      setCustomers(updated);
-    } else {
-      setCustomers([formData, ...customers]);
+    if (formData.gstin && !isValidGstin(formData.gstin)) {
+      Alert.alert(t('customers.invalidGstin'));
+      return;
     }
-    setIsModalVisible(false);
+    if (!businessId) return;
+    const isNew = customers.findIndex((c) => c.id === formData.id) < 0;
+    void (async () => {
+      try {
+        const db = await getDb();
+        await upsertCustomer(db, businessId, formData, isNew);
+        await reload();
+        setIsModalVisible(false);
+      } catch (e) {
+        Alert.alert('Error', e instanceof Error ? e.message : String(e));
+      }
+    })();
   };
 
   const handleCreateInvoiceForCustomer = (cust: Customer) => {
     if (navigation?.navigate) {
       navigation.navigate('InvoiceCreate', {
         initialCustomer: {
+          id: cust.id,
           name: cust.name,
           gstin: cust.gstin,
           phone: cust.phone,
@@ -234,7 +194,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Customers Directory</Text>
+          <Text style={styles.title}>{t('customers.title')}</Text>
           <Text style={styles.subTitle}>Client GSTINs & Master Records</Text>
         </View>
         <TouchableOpacity style={styles.addBtn} onPress={handleOpenAddModal}>

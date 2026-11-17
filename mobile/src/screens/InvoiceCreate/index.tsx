@@ -8,9 +8,21 @@ import {
   TouchableOpacity,
   Modal,
   Alert,
-  Switch,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../store/useAppStore';
+import { CONFIG } from '../../config/env';
+import { getDb } from '../../db/schema';
+import { createInvoice, nextInvoiceNumber } from '../../db/repositories';
+import { localISODate } from '../../lib/dates';
+import { formatINR } from '../../lib/format';
+import {
+  INDIAN_STATES,
+  calculateGst,
+  isValidGstin,
+  normalizeStateCode,
+  stateNameFor,
+} from '../../lib/gst';
 
 export interface InvoiceLineItem {
   id: string;
@@ -37,18 +49,6 @@ interface CustomerState {
   billingAddress: string;
 }
 
-const INDIAN_STATES = [
-  { code: '27', name: 'Maharashtra' },
-  { code: '29', name: 'Karnataka' },
-  { code: '07', name: 'Delhi' },
-  { code: '24', name: 'Gujarat' },
-  { code: '33', name: 'Tamil Nadu' },
-  { code: '36', name: 'Telangana' },
-  { code: '19', name: 'West Bengal' },
-  { code: '09', name: 'Uttar Pradesh' },
-  { code: '06', name: 'Haryana' },
-  { code: '23', name: 'Madhya Pradesh' },
-];
 
 const TAX_RATES = [0, 5, 12, 18, 28];
 const UNITS = ['PCS', 'BOX', 'KG', 'LTR', 'MTR', 'BAG', 'SET'];
@@ -57,24 +57,28 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
   navigation,
   route,
 }) => {
+  const { t } = useTranslation();
   const { business } = useAppStore();
-  const sellerStateCode = business?.stateCode || '27';
+  const sellerStateCode = business?.stateCode || CONFIG.DEFAULT_STATE_CODE;
 
   // Customer State
-  const [customer, setCustomer] = useState<CustomerState>({
-    name: route?.params?.initialCustomer?.name || 'Bharat Industrial Supplies',
-    gstin: route?.params?.initialCustomer?.gstin || '27AABCB9876Q1ZB',
-    phone: '9822012345',
-    stateCode: '27',
-    stateName: 'Maharashtra',
-    billingAddress: 'Gala 102, Shanti Industrial Estate, Thane West, MH - 400601',
+  const [customer, setCustomer] = useState<CustomerState>(() => {
+    const initial = route?.params?.initialCustomer;
+    const code = normalizeStateCode(initial?.stateCode) || CONFIG.DEFAULT_STATE_CODE;
+    return {
+      name: initial?.name || '',
+      gstin: initial?.gstin || '',
+      phone: initial?.phone || '',
+      stateCode: code,
+      stateName: initial?.stateName || stateNameFor(code),
+      billingAddress: initial?.billingAddress || '',
+    };
   });
 
   // Invoice Meta
-  const [invoiceNumber, setInvoiceNumber] = useState<string>('APX-26/0148');
-  const [invoiceDate, setInvoiceDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  );
+  const [invoiceNumber, setInvoiceNumber] = useState<string>('');
+  const [invoiceDate, setInvoiceDate] = useState<string>(localISODate());
+  const [saving, setSaving] = useState(false);
   const [paymentTerms, setPaymentTerms] = useState<string>('Net 15 Days');
   const [notes, setNotes] = useState<string>(
     'Thank you for your business. Subject to Mumbai Jurisdiction.'
@@ -99,23 +103,7 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
         totalAmount: 0,
       }));
     }
-    return [
-      {
-        id: '1',
-        name: 'Heavy Duty Industrial Ball Valve 2 Inch',
-        hsnCode: '84818030',
-        quantity: 10,
-        unit: 'PCS',
-        unitPrice: 1250,
-        discountPercent: 5,
-        taxRate: 18,
-        taxableAmount: 11875,
-        cgstAmount: 1068.75,
-        sgstAmount: 1068.75,
-        igstAmount: 0,
-        totalAmount: 14012.5,
-      },
-    ];
+    return [];
   });
 
   // Modal for adding / editing item
@@ -145,37 +133,44 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
       'taxableAmount' | 'cgstAmount' | 'sgstAmount' | 'igstAmount' | 'totalAmount'
     >
   ): InvoiceLineItem => {
-    const gross = item.quantity * item.unitPrice;
-    const discount = gross * (item.discountPercent / 100);
-    const taxable = gross - discount;
-
-    let cgst = 0;
-    let sgst = 0;
-    let igst = 0;
-
-    if (isInterState) {
-      igst = taxable * (item.taxRate / 100);
-    } else {
-      cgst = taxable * (item.taxRate / 200);
-      sgst = taxable * (item.taxRate / 200);
-    }
-
-    const total = taxable + cgst + sgst + igst;
-
+    const line = calculateGst(
+      {
+        unitPrice: item.unitPrice,
+        quantity: item.quantity,
+        taxRate: item.taxRate,
+        discountPercent: item.discountPercent,
+      },
+      sellerStateCode,
+      customer.stateCode
+    );
     return {
       ...item,
-      taxableAmount: taxable,
-      cgstAmount: cgst,
-      sgstAmount: sgst,
-      igstAmount: igst,
-      totalAmount: total,
+      taxableAmount: line.taxableAmount,
+      cgstAmount: line.cgstAmount,
+      sgstAmount: line.sgstAmount,
+      igstAmount: line.igstAmount,
+      totalAmount: line.totalAmount,
     };
   };
 
-  // Recompute all items when customer state changes (e.g. from MH to KA)
+  // Recompute when seller or buyer state changes
   useEffect(() => {
     setItems((prev) => prev.map((it) => calculateItemRow(it)));
-  }, [customer.stateCode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customer.stateCode, sellerStateCode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!business?.id) return;
+      const db = await getDb();
+      const next = await nextInvoiceNumber(db, business.id);
+      if (!cancelled) setInvoiceNumber((current) => current || next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [business?.id]);
 
   // Overall Invoice Calculations
   const taxableSubtotal = items.reduce((acc, it) => acc + it.taxableAmount, 0);
@@ -194,11 +189,10 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
     let stateName = customer.stateName;
 
     if (clean.length >= 2) {
-      const code = clean.substring(0, 2);
-      const match = INDIAN_STATES.find((s) => s.code === code);
-      if (match) {
-        stateCode = match.code;
-        stateName = match.name;
+      const code = normalizeStateCode(clean.substring(0, 2));
+      if (code) {
+        stateCode = code;
+        stateName = stateNameFor(code);
       }
     }
     setCustomer({
@@ -260,28 +254,72 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
     setIsItemModalVisible(true);
   };
 
-  const handleSubmitInvoice = () => {
+  const handleSubmitInvoice = async () => {
+    if (!business?.id) {
+      Alert.alert(t('invoiceCreate.missingBusiness'));
+      return;
+    }
     if (!customer.name.trim()) {
-      Alert.alert('Missing Customer', 'Please specify a customer name.');
+      Alert.alert(t('invoiceCreate.missingCustomer'));
       return;
     }
     if (items.length === 0) {
-      Alert.alert('No Items', 'Please add at least one line item to the invoice.');
+      Alert.alert(t('invoiceCreate.noItems'));
+      return;
+    }
+    if (customer.gstin && !isValidGstin(customer.gstin)) {
+      Alert.alert(t('invoiceCreate.invalidGstin'));
       return;
     }
 
-    Alert.alert(
-      'Invoice Created Successfully',
-      `Invoice #${invoiceNumber} for ₹${roundedGrandTotal.toFixed(
-        2
-      )} has been generated and ready for sharing.`,
-      [
-        {
-          text: 'View Invoices',
-          onPress: () => navigation?.navigate && navigation.navigate('InvoicesList'),
+    const termsMatch = /(\d+)/.exec(paymentTerms);
+    const paymentTermsDays = termsMatch ? parseInt(termsMatch[1], 10) : 15;
+
+    setSaving(true);
+    try {
+      const db = await getDb();
+      await createInvoice(db, {
+        businessId: business.id,
+        sellerStateCode,
+        buyerStateCode: customer.stateCode,
+        invoiceNumber: invoiceNumber || (await nextInvoiceNumber(db, business.id)),
+        invoiceDate,
+        paymentTermsDays,
+        inputMode: route?.params?.inputMode === 'voice' ? 'voice' : 'text',
+        customer: {
+          id: route?.params?.initialCustomer?.id,
+          name: customer.name.trim(),
+          gstin: customer.gstin || undefined,
+          phone: customer.phone || undefined,
+          stateCode: customer.stateCode,
+          address: customer.billingAddress || undefined,
         },
-      ]
-    );
+        items: items.map((it) => ({
+          id: it.id,
+          name: it.name,
+          hsnCode: it.hsnCode,
+          quantity: it.quantity,
+          unit: it.unit,
+          unitPrice: it.unitPrice,
+          discountPercent: it.discountPercent,
+          taxRate: it.taxRate,
+        })),
+      });
+      Alert.alert(
+        t('invoiceCreate.created'),
+        t('invoiceCreate.createdBody', { number: invoiceNumber, amount: formatINR(roundedGrandTotal) }),
+        [
+          {
+            text: t('invoiceCreate.viewInvoices'),
+            onPress: () => navigation?.navigate && navigation.navigate('MainTabs', { screen: 'Invoices' }),
+          },
+        ]
+      );
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -289,7 +327,7 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
       {/* Top Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>New Tax Invoice</Text>
+          <Text style={styles.title}>{t('invoiceCreate.title')}</Text>
           <Text style={styles.subTitle}>GST Compliance Rule 46 Format</Text>
         </View>
         <TouchableOpacity style={styles.saveDraftBtn} onPress={() => Alert.alert('Draft Saved')}>
@@ -373,7 +411,7 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
                 value={`${customer.stateName} (${customer.stateCode})`}
                 onChangeText={(val) => {
                   const code = val.replace(/\D/g, '').slice(0, 2);
-                  setCustomer({ ...customer, stateCode: code || '27' });
+                  setCustomer({ ...customer, stateCode: code || CONFIG.DEFAULT_STATE_CODE, stateName: stateNameFor(code || CONFIG.DEFAULT_STATE_CODE) });
                 }}
               />
             </View>
@@ -526,16 +564,15 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
       <View style={styles.bottomBar}>
         <View style={styles.bottomTotalBox}>
           <Text style={styles.bottomTotalLabel}>Total Amount</Text>
-          <Text style={styles.bottomTotalNumber}>
-            ₹{roundedGrandTotal.toLocaleString('en-IN')}.00
-          </Text>
+          <Text style={styles.bottomTotalNumber}>{formatINR(roundedGrandTotal)}</Text>
         </View>
         <TouchableOpacity
-          style={styles.submitBtn}
-          onPress={handleSubmitInvoice}
+          style={[styles.submitBtn, saving && { opacity: 0.6 }]}
+          onPress={() => void handleSubmitInvoice()}
           activeOpacity={0.85}
+          disabled={saving}
         >
-          <Text style={styles.submitBtnText}>Generate Invoice</Text>
+          <Text style={styles.submitBtnText}>{t('invoiceCreate.submit')}</Text>
         </TouchableOpacity>
       </View>
 
