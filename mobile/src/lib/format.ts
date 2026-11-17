@@ -1,5 +1,5 @@
-/** Indian digit grouping: 1234567 -> ₹12,34,567 */
-export function formatINR(value: number, withPaise = false): string {
+/** Indian digit grouping: 1234567.5 -> ₹12,34,567.50 */
+export function formatINR(value: number, withPaise = true): string {
   const n = Number.isFinite(value) ? value : 0;
   const fixed = Math.abs(n).toFixed(withPaise ? 2 : 0);
   const [intPart, decPart] = fixed.split('.');
@@ -14,7 +14,7 @@ export function formatINR(value: number, withPaise = false): string {
   return `${negative ? '-' : ''}₹${grouped}${decPart ? '.' + decPart : ''}`;
 }
 
-/** 'YYYY-MM-DD' -> 'DD/MM/YY' (the format shopkeepers already use) */
+/** 'YYYY-MM-DD' -> 'DD/MM/YY' */
 export function formatDate(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
   if (!m) return iso;
@@ -25,11 +25,6 @@ export function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-/**
- * First visible letter, safe for Tamil. Tamil vowel signs and the pulli are
- * separate code points that belong to the letter before them, so keep them:
- * 'செல்வம்' -> 'செ', not 'ச'.
- */
 const COMBINING = /[\u0300-\u036F\u0B82\u0BBE-\u0BCD\u0BD7]/;
 
 export function initialOf(name: string): string {

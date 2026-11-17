@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,86 +9,63 @@ import {
   RefreshControl,
   Alert,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { useTranslation } from 'react-i18next';
+import { Screen } from '../../ui';
 import { InvoiceCard, InvoiceCardData, InvoiceStatus, formatINR } from '../../components/InvoiceCard';
+import { useAppStore } from '../../store/useAppStore';
+import { getDb } from '../../db/schema';
+import { listInvoices } from '../../db/repositories';
+import { displayPaymentStatus } from '../../lib/paymentStatus';
+import { localISODate } from '../../lib/dates';
+import { alertActionError, printInvoiceById, shareInvoicePdfById } from '../../billing/invoiceActions';
 
-const INITIAL_INVOICES: InvoiceCardData[] = [
-  {
-    id: 'inv_101',
-    invoiceNumber: 'APX-26/0147',
-    customerName: 'Shree Balaji Enterprises',
-    customerGstin: '27AAECB9123F1ZV',
-    date: '2026-11-09T10:30:00Z',
-    dueDate: '2026-11-24T10:30:00Z',
-    totalAmount: 148500.0,
-    balanceDue: 0,
-    status: 'PAID',
-    itemsCount: 4,
-  },
-  {
-    id: 'inv_102',
-    invoiceNumber: 'APX-26/0146',
-    customerName: 'Hindustan Machine Tools Ltd',
-    customerGstin: '29AACCH5678Q1Z2',
-    date: '2026-11-08T15:20:00Z',
-    dueDate: '2026-11-23T15:20:00Z',
-    totalAmount: 384200.0,
-    balanceDue: 384200.0,
-    status: 'PENDING',
-    itemsCount: 8,
-  },
-  {
-    id: 'inv_103',
-    invoiceNumber: 'APX-26/0145',
-    customerName: 'Navratna Engineering Works',
-    customerGstin: '27AABCN3456P1ZX',
-    date: '2026-10-25T11:00:00Z',
-    dueDate: '2026-11-04T11:00:00Z',
-    totalAmount: 76500.0,
-    balanceDue: 76500.0,
-    status: 'OVERDUE',
-    itemsCount: 2,
-  },
-  {
-    id: 'inv_104',
-    invoiceNumber: 'APX-26/0144',
-    customerName: 'Metro Infraworks Corp',
-    customerGstin: '07AAECM7890K1Z9',
-    date: '2026-10-20T14:45:00Z',
-    dueDate: '2026-11-05T14:45:00Z',
-    totalAmount: 512000.0,
-    balanceDue: 0,
-    status: 'PAID',
-    itemsCount: 15,
-  },
-  {
-    id: 'inv_105',
-    invoiceNumber: 'APX-26/0143',
-    customerName: 'Siddhi Vinayak Traders',
-    customerGstin: '27AAMFS4432B1ZM',
-    date: '2026-10-18T09:15:00Z',
-    dueDate: '2026-11-02T09:15:00Z',
-    totalAmount: 22400.0,
-    balanceDue: 0,
-    status: 'CANCELLED',
-    itemsCount: 1,
-  },
-];
 
-const FILTER_TABS: { label: string; value: 'ALL' | InvoiceStatus }[] = [
-  { label: 'All', value: 'ALL' },
-  { label: 'Pending', value: 'PENDING' },
-  { label: 'Paid', value: 'PAID' },
-  { label: 'Overdue', value: 'OVERDUE' },
-  { label: 'Cancelled', value: 'CANCELLED' },
+const FILTER_TABS: { labelKey: 'invoices.all' | 'invoices.unpaid' | 'invoices.partial' | 'invoices.paid' | 'invoices.overdue' | 'invoices.cancelled'; value: 'ALL' | InvoiceStatus }[] = [
+  { labelKey: 'invoices.all', value: 'ALL' },
+  { labelKey: 'invoices.unpaid', value: 'UNPAID' },
+  { labelKey: 'invoices.partial', value: 'PARTIAL' },
+  { labelKey: 'invoices.paid', value: 'PAID' },
+  { labelKey: 'invoices.overdue', value: 'OVERDUE' },
+  { labelKey: 'invoices.cancelled', value: 'CANCELLED' },
 ];
 
 export const InvoicesListScreen: React.FC<{ navigation?: any }> = ({
   navigation,
 }) => {
-  const [invoices, setInvoices] = useState<InvoiceCardData[]>(INITIAL_INVOICES);
+  const { t } = useTranslation();
+  const businessId = useAppStore((s) => s.business?.id);
+  const [invoices, setInvoices] = useState<InvoiceCardData[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeFilter, setActiveFilter] = useState<'ALL' | InvoiceStatus>('ALL');
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+
+  const reload = useCallback(async () => {
+    if (!businessId) return;
+    const db = await getDb();
+    const rows = await listInvoices(db, businessId);
+    const today = localISODate();
+    setInvoices(
+      rows.map((r) => ({
+        id: r.id,
+        invoiceNumber: r.invoiceNumber,
+        customerName: r.customerName,
+        customerGstin: r.customerGstin,
+        date: r.date,
+        dueDate: r.dueDate,
+        totalAmount: r.totalAmount,
+        balanceDue: r.balanceDue,
+        status: displayPaymentStatus(r.paymentStatus, r.dueDate, today),
+        itemsCount: r.itemsCount,
+      }))
+    );
+  }, [businessId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void reload();
+    }, [reload])
+  );
 
   // Calculations for KPI Summary
   const { totalSales, totalPending, pendingCount } = useMemo(() => {
@@ -100,7 +77,7 @@ export const InvoicesListScreen: React.FC<{ navigation?: any }> = ({
       if (inv.status !== 'CANCELLED') {
         sales += inv.totalAmount;
       }
-      if (inv.status === 'PENDING' || inv.status === 'OVERDUE') {
+      if (inv.status === 'UNPAID' || inv.status === 'PARTIAL' || inv.status === 'OVERDUE') {
         pending += inv.balanceDue || inv.totalAmount;
         pCount += 1;
       }
@@ -128,35 +105,38 @@ export const InvoicesListScreen: React.FC<{ navigation?: any }> = ({
 
   const onRefresh = () => {
     setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 800);
+    void reload().finally(() => setIsRefreshing(false));
   };
 
   const handleInvoicePress = (invoice: InvoiceCardData) => {
     Alert.alert(
       invoice.invoiceNumber,
-      `Customer: ${invoice.customerName}\nAmount: ${formatINR(
-        invoice.totalAmount
-      )}\nStatus: ${invoice.status}`
+      t('invoices.detailBody', {
+        name: invoice.customerName,
+        amount: formatINR(invoice.totalAmount),
+        status: invoice.status,
+      })
     );
   };
 
   const handleDownload = (invoice: InvoiceCardData) => {
-    Alert.alert('Download Started', `Downloading PDF for ${invoice.invoiceNumber}`);
+    void shareInvoicePdfById(invoice.id).catch((err) => alertActionError(err, t('pdf.taxInvoice')));
   };
 
   const handleShare = (invoice: InvoiceCardData) => {
-    Alert.alert('Share Invoice', `Sharing ${invoice.invoiceNumber} via WhatsApp / Email`);
+    void shareInvoicePdfById(invoice.id).catch((err) => alertActionError(err, t('invoices.sharePdf')));
+  };
+
+  const handlePrint = (invoice: InvoiceCardData) => {
+    void printInvoiceById(invoice.id).catch((err) => alertActionError(err, t('invoices.print')));
   };
 
   return (
-    <View style={styles.container}>
+    <Screen edges={['bottom']} scroll={false} style={styles.container}>
       {/* Top Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Tax Invoices</Text>
-          <Text style={styles.subTitle}>Sales & Compliance Invoices</Text>
+          <Text style={styles.subTitle}>{t('invoices.subtitle')}</Text>
         </View>
 
         <View style={styles.topActions}>
@@ -179,12 +159,12 @@ export const InvoicesListScreen: React.FC<{ navigation?: any }> = ({
       {/* KPI Stats Bar */}
       <View style={styles.kpiContainer}>
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiLabel}>Total Sales</Text>
+          <Text style={styles.kpiLabel}>{t('invoices.totalSales')}</Text>
           <Text style={styles.kpiValue}>{formatINR(totalSales)}</Text>
         </View>
         <View style={styles.kpiDivider} />
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiLabel}>Outstanding ({pendingCount})</Text>
+          <Text style={styles.kpiLabel}>{t('invoices.outstanding', { count: pendingCount })}</Text>
           <Text style={[styles.kpiValue, styles.kpiOutstanding]}>
             {formatINR(totalPending)}
           </Text>
@@ -227,7 +207,7 @@ export const InvoicesListScreen: React.FC<{ navigation?: any }> = ({
                 activeFilter === tab.value && styles.activeFilterTabText,
               ]}
             >
-              {tab.label}
+              {t(tab.labelKey)}
             </Text>
           </TouchableOpacity>
         ))}
@@ -243,6 +223,7 @@ export const InvoicesListScreen: React.FC<{ navigation?: any }> = ({
             onPress={handleInvoicePress}
             onDownload={handleDownload}
             onShare={handleShare}
+            onPrint={handlePrint}
           />
         )}
         contentContainerStyle={styles.listContent}
@@ -252,16 +233,16 @@ export const InvoicesListScreen: React.FC<{ navigation?: any }> = ({
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>📄</Text>
-            <Text style={styles.emptyTitle}>No Invoices Found</Text>
+            <Text style={styles.emptyTitle}>{t('invoices.emptyTitle')}</Text>
             <Text style={styles.emptySub}>
               {searchQuery
-                ? 'Try a different search keyword'
-                : 'Create your first invoice by tapping + New or Voice Bill'}
+                ? t('invoices.emptySearch')
+                : t('invoices.emptyHint')}
             </Text>
           </View>
         }
       />
-    </View>
+    </Screen>
   );
 };
 

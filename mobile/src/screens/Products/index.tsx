@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,7 +9,18 @@ import {
   Modal,
   Alert,
   ScrollView,
+  KeyboardAvoidingView,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { useTranslation } from 'react-i18next';
+import { Screen } from '../../ui';
+import { DecimalInput } from '../../ui/DecimalInput';
+import { HsnPicker } from '../../ui/HsnPicker';
+import { useAppStore } from '../../store/useAppStore';
+import { getDb } from '../../db/schema';
+import { deleteProduct, listProducts, seedHardwareCatalog, upsertProduct } from '../../db/repositories';
+import { BigButton } from '../../ui';
+import { newId } from '../../lib/id';
 
 export interface Product {
   id: string;
@@ -25,80 +36,54 @@ export interface Product {
   minStockLevel: number;
 }
 
-const INITIAL_PRODUCTS: Product[] = [
-  {
-    id: 'prod_1',
-    name: 'Industrial Ball Valve 2 Inch Brass',
-    sku: 'VLV-BRS-02',
-    hsnCode: '84818030',
-    category: 'Plumbing',
-    unit: 'PCS',
-    sellingPrice: 1250,
-    purchasePrice: 950,
-    taxRate: 18,
-    currentStock: 45,
-    minStockLevel: 10,
-  },
-  {
-    id: 'prod_2',
-    name: 'UltraTech Super Cement (50kg Bag)',
-    sku: 'CMT-ULT-50',
-    hsnCode: '25232900',
-    category: 'Building Materials',
-    unit: 'BAG',
-    sellingPrice: 380,
-    purchasePrice: 330,
-    taxRate: 28,
-    currentStock: 120,
-    minStockLevel: 30,
-  },
-  {
-    id: 'prod_3',
-    name: 'Havells Modular Switch 10A 1-Way',
-    sku: 'SW-HAV-10A',
-    hsnCode: '85365020',
-    category: 'Electricals',
-    unit: 'PCS',
-    sellingPrice: 140,
-    purchasePrice: 95,
-    taxRate: 18,
-    currentStock: 8,
-    minStockLevel: 25, // Low stock!
-  },
-  {
-    id: 'prod_4',
-    name: 'Asian Paints Apex Ultima White 20L',
-    sku: 'PNT-APX-20L',
-    hsnCode: '32091000',
-    category: 'Paints',
-    unit: 'CAN',
-    sellingPrice: 4200,
-    purchasePrice: 3450,
-    taxRate: 18,
-    currentStock: 0,
-    minStockLevel: 5, // Out of stock!
-  },
-  {
-    id: 'prod_5',
-    name: 'High Tensile Hex Bolt M12 x 50mm',
-    sku: 'BLT-HT-1250',
-    hsnCode: '73181500',
-    category: 'Hardware',
-    unit: 'BOX',
-    sellingPrice: 480,
-    purchasePrice: 360,
-    taxRate: 18,
-    currentStock: 64,
-    minStockLevel: 15,
-  },
-];
 
-const CATEGORIES = ['All', 'Plumbing', 'Electricals', 'Hardware', 'Paints', 'Building Materials'];
+const CATEGORIES = ['All', 'Plumbing', 'Electricals', 'Hardware', 'Paints', 'Building Materials', 'Tools'];
 const TAX_RATES = [0, 5, 12, 18, 28];
 const UNITS = ['PCS', 'BAG', 'CAN', 'BOX', 'KG', 'MTR', 'LTR'];
 
 export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
-  const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
+  const { t } = useTranslation();
+  const businessId = useAppStore((s) => s.business?.id);
+  const [products, setProducts] = useState<Product[]>([]);
+
+  const reload = useCallback(async () => {
+    if (!businessId) return;
+    const db = await getDb();
+    setProducts(await listProducts(db, businessId));
+  }, [businessId]);
+
+  const [seeding, setSeeding] = useState(false);
+  const loadStarter = useCallback(async () => {
+    if (!businessId || seeding) return;
+    setSeeding(true);
+    try {
+      const db = await getDb();
+      const added = await seedHardwareCatalog(db, businessId);
+      await reload();
+      Alert.alert(t('products.seedDoneTitle'), added > 0 ? t('products.seedDone', { count: added }) : t('products.seedNone'));
+    } catch (e) {
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : String(e));
+    } finally {
+      setSeeding(false);
+    }
+  }, [businessId, seeding, reload, t]);
+  const seedButton = (
+    <BigButton
+      icon="🧰"
+      label={t('products.seedBtn')}
+      sublabel={t('products.seedBtnSub')}
+      variant={products.length === 0 ? 'primary' : 'secondary'}
+      busy={seeding}
+      onPress={() => void loadStarter()}
+      style={{ marginVertical: 12 }}
+    />
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      void reload();
+    }, [reload])
+  );
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
@@ -113,7 +98,7 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
     unit: 'PCS',
     sellingPrice: 0,
     purchasePrice: 0,
-    taxRate: 18,
+    taxRate: 0,
     currentStock: 0,
     minStockLevel: 5,
   });
@@ -134,7 +119,7 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
 
   const handleOpenAddModal = () => {
     setFormData({
-      id: `prod_${Date.now()}`,
+      id: newId(),
       name: '',
       sku: `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
       hsnCode: '',
@@ -142,7 +127,7 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
       unit: 'PCS',
       sellingPrice: 0,
       purchasePrice: 0,
-      taxRate: 18,
+      taxRate: 0,
       currentStock: 0,
       minStockLevel: 5,
     });
@@ -156,36 +141,49 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
 
   const handleSaveProduct = () => {
     if (!formData.name.trim()) {
-      Alert.alert('Validation Error', 'Product name cannot be empty.');
+      Alert.alert(t('common.validationError'), t('products.nameRequired'));
       return;
     }
     if (formData.sellingPrice <= 0) {
-      Alert.alert('Validation Error', 'Selling price must be greater than 0.');
+      Alert.alert(t('common.validationError'), t('products.priceRequired'));
       return;
     }
 
+    if (!businessId) return;
     const existingIndex = products.findIndex((p) => p.id === formData.id);
-    if (existingIndex >= 0) {
-      const updated = [...products];
-      updated[existingIndex] = formData;
-      setProducts(updated);
-    } else {
-      setProducts([formData, ...products]);
-    }
-    setIsModalVisible(false);
+    const isNew = existingIndex < 0;
+    void (async () => {
+      try {
+        const db = await getDb();
+        await upsertProduct(db, businessId, formData, isNew);
+        await reload();
+        setIsModalVisible(false);
+      } catch (e) {
+        Alert.alert(t('common.error'), e instanceof Error ? e.message : String(e));
+      }
+    })();
   };
 
   const handleDeleteProduct = (id: string, name: string) => {
     Alert.alert(
-      'Delete Product',
-      `Are you sure you want to remove "${name}" from master catalog?`,
+      t('products.deleteTitle'),
+      t('products.deleteBody', { name }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: () => {
-            setProducts((prev) => prev.filter((p) => p.id !== id));
+            if (!businessId) return;
+            void (async () => {
+              try {
+                const db = await getDb();
+                await deleteProduct(db, businessId, id);
+                await reload();
+              } catch (e) {
+                Alert.alert(t('common.error'), e instanceof Error ? e.message : String(e));
+              }
+            })();
           },
         },
       ]
@@ -194,24 +192,24 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
 
   const getStockBadge = (stock: number, min: number) => {
     if (stock <= 0) {
-      return { label: 'OUT OF STOCK', bg: '#FEE2E2', text: '#DC2626' };
+      return { label: t('products.outOfStock'), bg: '#FEE2E2', text: '#DC2626' };
     }
     if (stock <= min) {
-      return { label: `LOW (${stock})`, bg: '#FEF3C7', text: '#D97706' };
+      return { label: t('products.lowStock', { count: stock }), bg: '#FEF3C7', text: '#D97706' };
     }
-    return { label: `${stock} In Stock`, bg: '#ECFDF5', text: '#059669' };
+    return { label: t('products.inStock', { count: stock }), bg: '#ECFDF5', text: '#059669' };
   };
 
   return (
-    <View style={styles.container}>
+    <Screen edges={['top']} scroll={false} style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Product Catalog</Text>
-          <Text style={styles.subTitle}>Master Items, HSN & GST Rates</Text>
+          <Text style={styles.title}>{t('products.title')}</Text>
+          <Text style={styles.subTitle}>{t('products.subtitle')}</Text>
         </View>
         <TouchableOpacity style={styles.addBtn} onPress={handleOpenAddModal}>
-          <Text style={styles.addBtnText}>+ Add Product</Text>
+          <Text style={styles.addBtnText}>{t('products.addBtn')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -219,7 +217,7 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
       <View style={styles.searchBar}>
         <TextInput
           style={styles.searchInput}
-          placeholder="Search by product name, SKU, or HSN code..."
+          placeholder={t('products.searchPlaceholder')}
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholderTextColor="#94A3B8"
@@ -249,7 +247,7 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
                   selectedCategory === cat && styles.categoryChipTextActive,
                 ]}
               >
-                {cat}
+                {t(`products.categories.${cat.replace(/\s+/g, '')}`, { defaultValue: cat })}
               </Text>
             </TouchableOpacity>
           ))}
@@ -261,6 +259,7 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
         data={filteredProducts}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
+        ListFooterComponent={filteredProducts.length > 0 ? seedButton : null}
         renderItem={({ item }) => {
           const badge = getStockBadge(item.currentStock, item.minStockLevel);
           return (
@@ -268,7 +267,7 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
               <View style={styles.cardHeader}>
                 <View style={{ flex: 1, marginRight: 8 }}>
                   <Text style={styles.prodName}>{item.name}</Text>
-                  <Text style={styles.prodSku}>SKU: {item.sku} • {item.category}</Text>
+                  <Text style={styles.prodSku}>{t('products.skuLabel')}: {item.sku} • {item.category}</Text>
                 </View>
 
                 <View style={[styles.stockBadge, { backgroundColor: badge.bg }]}>
@@ -280,23 +279,23 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
 
               <View style={styles.metaRow}>
                 <View style={styles.pillContainer}>
-                  <Text style={styles.pillText}>HSN: {item.hsnCode || 'N/A'}</Text>
+                  <Text style={styles.pillText}>{t('products.hsnPill', { value: item.hsnCode || t('products.na') })}</Text>
                 </View>
                 <View style={styles.pillContainer}>
-                  <Text style={styles.pillText}>GST: {item.taxRate}%</Text>
+                  <Text style={styles.pillText}>{t('products.gstPill', { rate: item.taxRate })}</Text>
                 </View>
                 <View style={styles.pillContainer}>
-                  <Text style={styles.pillText}>Unit: {item.unit}</Text>
+                  <Text style={styles.pillText}>{t('products.unitPill', { unit: item.unit })}</Text>
                 </View>
               </View>
 
               <View style={styles.priceRow}>
                 <View>
-                  <Text style={styles.priceLabel}>Selling Price</Text>
+                  <Text style={styles.priceLabel}>{t('products.sellingPriceLabel')}</Text>
                   <Text style={styles.sellingPrice}>₹{item.sellingPrice.toFixed(2)}</Text>
                 </View>
                 <View>
-                  <Text style={styles.priceLabel}>Purchase Cost</Text>
+                  <Text style={styles.priceLabel}>{t('products.purchaseCost')}</Text>
                   <Text style={styles.purchasePrice}>₹{item.purchasePrice.toFixed(2)}</Text>
                 </View>
                 <View style={styles.actionButtons}>
@@ -304,13 +303,13 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
                     style={styles.editBtn}
                     onPress={() => handleOpenEditModal(item)}
                   >
-                    <Text style={styles.editBtnText}>Edit</Text>
+                    <Text style={styles.editBtnText}>{t('products.edit')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.deleteBtn}
                     onPress={() => handleDeleteProduct(item.id, item.name)}
                   >
-                    <Text style={styles.deleteBtnText}>Delete</Text>
+                    <Text style={styles.deleteBtnText}>{t('products.delete')}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -320,10 +319,8 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>📦</Text>
-            <Text style={styles.emptyTitle}>No Products Found</Text>
-            <Text style={styles.emptySub}>
-              Tap "+ Add Product" to create your first catalog item.
-            </Text>
+            <Text style={styles.emptyTitle}>{t('products.emptyTitle')}</Text>
+            {seedButton}
           </View>
         }
       />
@@ -335,26 +332,26 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
         transparent
         onRequestClose={() => setIsModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalHeading}>
               {products.some((p) => p.id === formData.id)
-                ? 'Edit Catalog Product'
-                : 'Add New Product'}
+                ? t('products.editTitle')
+                : t('products.addTitle')}
             </Text>
 
             <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.inputLabel}>Product Title *</Text>
+              <Text style={styles.inputLabel}>{t('products.nameTitle')}</Text>
               <TextInput
                 style={styles.modalInput}
                 value={formData.name}
                 onChangeText={(val) => setFormData({ ...formData, name: val })}
-                placeholder="e.g. Copper Wire Coil 1.5 sq mm"
+                placeholder={t('products.namePlaceholder')}
               />
 
               <View style={styles.formRow}>
                 <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.inputLabel}>SKU / Code</Text>
+                  <Text style={styles.inputLabel}>{t('products.skuCode')}</Text>
                   <TextInput
                     style={styles.modalInput}
                     value={formData.sku}
@@ -362,22 +359,28 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>HSN Code</Text>
+                  <Text style={styles.inputLabel}>{t('products.hsnCode')}</Text>
                   <TextInput
                     style={styles.modalInput}
                     value={formData.hsnCode}
                     onChangeText={(val) =>
                       setFormData({ ...formData, hsnCode: val })
                     }
-                    placeholder="e.g. 8544"
+                    placeholder={t('products.hsnPlaceholder')}
                     keyboardType="numeric"
+                  />
+                  <HsnPicker
+                    initialQuery={formData.name}
+                    onPick={(e) =>
+                      setFormData((prev) => ({ ...prev, hsnCode: e.code, taxRate: e.rate ?? prev.taxRate }))
+                    }
                   />
                 </View>
               </View>
 
               <View style={styles.formRow}>
                 <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.inputLabel}>Category</Text>
+                  <Text style={styles.inputLabel}>{t('products.category')}</Text>
                   <TextInput
                     style={styles.modalInput}
                     value={formData.category}
@@ -387,50 +390,40 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>Unit (UQC)</Text>
+                  <Text style={styles.inputLabel}>{t('products.unitUqc')}</Text>
                   <TextInput
                     style={styles.modalInput}
                     value={formData.unit}
                     onChangeText={(val) =>
                       setFormData({ ...formData, unit: val.toUpperCase() })
                     }
-                    placeholder="PCS, BOX, KG"
+                    placeholder={t('products.unitPlaceholder')}
                   />
                 </View>
               </View>
 
               <View style={styles.formRow}>
                 <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.inputLabel}>Selling Price (₹) *</Text>
-                  <TextInput
+                  <Text style={styles.inputLabel}>{t('products.sellingPriceStar')}</Text>
+                  <DecimalInput
                     style={styles.modalInput}
-                    value={formData.sellingPrice.toString()}
-                    keyboardType="numeric"
-                    onChangeText={(val) =>
-                      setFormData({
-                        ...formData,
-                        sellingPrice: parseFloat(val) || 0,
-                      })
-                    }
+                    value={formData.sellingPrice}
+                    decimals={2}
+                    onValue={(n) => setFormData((prev) => ({ ...prev, sellingPrice: n }))}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>Purchase Cost (₹)</Text>
-                  <TextInput
+                  <Text style={styles.inputLabel}>{t('products.purchaseCostRs')}</Text>
+                  <DecimalInput
                     style={styles.modalInput}
-                    value={formData.purchasePrice.toString()}
-                    keyboardType="numeric"
-                    onChangeText={(val) =>
-                      setFormData({
-                        ...formData,
-                        purchasePrice: parseFloat(val) || 0,
-                      })
-                    }
+                    value={formData.purchasePrice}
+                    decimals={2}
+                    onValue={(n) => setFormData((prev) => ({ ...prev, purchasePrice: n }))}
                   />
                 </View>
               </View>
 
-              <Text style={styles.inputLabel}>Applicable GST Rate %</Text>
+              <Text style={styles.inputLabel}>{t('products.gstRate')}</Text>
               <View style={styles.taxPillRow}>
                 {TAX_RATES.map((rate) => (
                   <TouchableOpacity
@@ -455,31 +448,21 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
 
               <View style={styles.formRow}>
                 <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.inputLabel}>Current Stock</Text>
-                  <TextInput
+                  <Text style={styles.inputLabel}>{t('products.currentStock')}</Text>
+                  <DecimalInput
                     style={styles.modalInput}
-                    value={formData.currentStock.toString()}
-                    keyboardType="numeric"
-                    onChangeText={(val) =>
-                      setFormData({
-                        ...formData,
-                        currentStock: parseInt(val, 10) || 0,
-                      })
-                    }
+                    value={formData.currentStock}
+                    decimals={3}
+                    onValue={(n) => setFormData((prev) => ({ ...prev, currentStock: n }))}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>Min Reorder Level</Text>
-                  <TextInput
+                  <Text style={styles.inputLabel}>{t('products.minReorder')}</Text>
+                  <DecimalInput
                     style={styles.modalInput}
-                    value={formData.minStockLevel.toString()}
-                    keyboardType="numeric"
-                    onChangeText={(val) =>
-                      setFormData({
-                        ...formData,
-                        minStockLevel: parseInt(val, 10) || 0,
-                      })
-                    }
+                    value={formData.minStockLevel}
+                    decimals={3}
+                    onValue={(n) => setFormData((prev) => ({ ...prev, minStockLevel: n }))}
                   />
                 </View>
               </View>
@@ -490,19 +473,19 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
                 style={styles.cancelBtn}
                 onPress={() => setIsModalVisible(false)}
               >
-                <Text style={styles.cancelBtnText}>Cancel</Text>
+                <Text style={styles.cancelBtnText}>{t('products.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.saveBtn}
                 onPress={handleSaveProduct}
               >
-                <Text style={styles.saveBtnText}>Save Product</Text>
+                <Text style={styles.saveBtnText}>{t('products.save')}</Text>
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </Screen>
   );
 };
 

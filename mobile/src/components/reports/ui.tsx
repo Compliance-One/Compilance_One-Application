@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
@@ -21,16 +21,32 @@ const toneColor: Record<Tone, string> = {
 /* Header                                                              */
 /* ------------------------------------------------------------------ */
 
+/** True when a native navigation header already shows the title and back arrow. */
+export const NativeHeaderContext = createContext(false);
+
 export function ScreenHeader({
   title,
   subtitle,
   onBack,
+  inner,
 }: {
   title: string;
   subtitle?: string;
   onBack?: () => void;
+  /** In-screen sub-page (e.g. one customer's statement): always show. */
+  inner?: boolean;
 }) {
   const { t } = useTranslation();
+  const nativeHeader = useContext(NativeHeaderContext);
+  if (nativeHeader && !inner) {
+    return subtitle ? (
+      <View style={[s.header, { paddingTop: 12 }]}>
+        <Text style={[typo.body, { color: colors.inkSoft }]}>{subtitle}</Text>
+      </View>
+    ) : (
+      <View style={{ height: 8 }} />
+    );
+  }
   return (
     <View style={s.header}>
       {onBack ? (

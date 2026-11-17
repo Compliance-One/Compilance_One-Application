@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import React from 'react';
 import {
   StyleSheet,
@@ -6,8 +7,11 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
+import { formatINR, formatDate } from '../lib/format';
 
-export type InvoiceStatus = 'PAID' | 'PENDING' | 'CANCELLED' | 'OVERDUE';
+export type InvoiceStatus = 'PAID' | 'UNPAID' | 'PARTIAL' | 'CANCELLED' | 'OVERDUE';
+/** @deprecated Use UNPAID. Kept so older call sites type-check during the transition. */
+export type LegacyInvoiceStatus = InvoiceStatus | 'PENDING';
 
 export interface InvoiceCardData {
   id: string;
@@ -27,6 +31,7 @@ export interface InvoiceCardProps {
   onPress?: (invoice: InvoiceCardData) => void;
   onDownload?: (invoice: InvoiceCardData) => void;
   onShare?: (invoice: InvoiceCardData) => void;
+  onPrint?: (invoice: InvoiceCardData) => void;
   containerStyle?: ViewStyle;
 }
 
@@ -40,11 +45,17 @@ const STATUS_CONFIG: Record<
     textColor: '#2E7D32',
     borderColor: '#A5D6A7',
   },
-  PENDING: {
-    label: 'PENDING',
+  UNPAID: {
+    label: 'UNPAID',
     badgeBg: '#FFF8E1',
     textColor: '#F57F17',
     borderColor: '#FFE082',
+  },
+  PARTIAL: {
+    label: 'PARTIAL',
+    badgeBg: '#E3F2FD',
+    textColor: '#1565C0',
+    borderColor: '#90CAF9',
   },
   OVERDUE: {
     label: 'OVERDUE',
@@ -60,36 +71,29 @@ const STATUS_CONFIG: Record<
   },
 };
 
-export const formatINR = (amount: number): string => {
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 2,
-  }).format(amount);
-};
-
-export const formatDate = (dateStr: string): string => {
-  try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    return d.toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
-  } catch {
-    return dateStr;
-  }
-};
+export { formatINR, formatDate };
 
 export const InvoiceCard: React.FC<InvoiceCardProps> = ({
   invoice,
   onPress,
   onDownload,
   onShare,
+  onPrint,
   containerStyle,
 }) => {
-  const statusMeta = STATUS_CONFIG[invoice.status] || STATUS_CONFIG.PENDING;
+  const { t } = useTranslation();
+  const statusMeta = STATUS_CONFIG[invoice.status] || STATUS_CONFIG.UNPAID;
+  const statusLabel = t(
+    (
+      {
+        PAID: 'invoices.statusPaid',
+        UNPAID: 'invoices.statusUnpaid',
+        PARTIAL: 'invoices.statusPartial',
+        OVERDUE: 'invoices.statusOverdue',
+        CANCELLED: 'invoices.statusCancelled',
+      } as const
+    )[invoice.status] ?? 'invoices.statusUnpaid'
+  );
 
   return (
     <TouchableOpacity
@@ -114,7 +118,7 @@ export const InvoiceCard: React.FC<InvoiceCardProps> = ({
           ]}
         >
           <Text style={[styles.badgeText, { color: statusMeta.textColor }]}>
-            {statusMeta.label}
+            {statusLabel}
           </Text>
         </View>
       </View>
@@ -125,50 +129,57 @@ export const InvoiceCard: React.FC<InvoiceCardProps> = ({
           {invoice.customerName}
         </Text>
         {invoice.customerGstin ? (
-          <Text style={styles.customerGstin}>GSTIN: {invoice.customerGstin}</Text>
+          <Text style={styles.customerGstin}>{t('invoices.gstin')}: {invoice.customerGstin}</Text>
         ) : null}
       </View>
 
       {/* Meta Row: Date, Items Count, Total Amount */}
       <View style={styles.metaRow}>
         <View style={styles.dateAndItems}>
-          <Text style={styles.metaLabel}>Issued: {formatDate(invoice.date)}</Text>
+          <Text style={styles.metaLabel}>{t('invoices.issued')}: {formatDate(invoice.date)}</Text>
           <Text style={styles.metaSub}>
-            {invoice.itemsCount} {invoice.itemsCount === 1 ? 'item' : 'items'}
-            {invoice.dueDate ? ` • Due: ${formatDate(invoice.dueDate)}` : ''}
+            {invoice.itemsCount} {invoice.itemsCount === 1 ? t('invoices.itemOne') : t('invoices.itemMany')}
+            {invoice.dueDate ? ` • ${t('invoices.due')}: ${formatDate(invoice.dueDate)}` : ''}
           </Text>
         </View>
 
         <View style={styles.amountContainer}>
-          <Text style={styles.amountLabel}>Total Amount</Text>
+          <Text style={styles.amountLabel}>{t('invoices.totalAmount')}</Text>
           <Text style={styles.totalAmount}>{formatINR(invoice.totalAmount)}</Text>
           {invoice.balanceDue !== undefined && invoice.balanceDue > 0 ? (
             <Text style={styles.balanceDue}>
-              Bal: {formatINR(invoice.balanceDue)}
+              {t('invoices.balance')}: {formatINR(invoice.balanceDue)}
             </Text>
           ) : null}
         </View>
       </View>
 
       {/* Action Footer if handlers provided */}
-      {(onDownload || onShare) && (
+      {(onDownload || onShare || onPrint) && (
         <View style={styles.actionRow}>
+          {onPrint && (
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => onPrint(invoice)}
+            >
+              <Text style={styles.actionBtnText}>{t('invoices.print')}</Text>
+            </TouchableOpacity>
+          )}
           {onDownload && (
             <TouchableOpacity
               style={styles.actionBtn}
               onPress={() => onDownload(invoice)}
             >
-              <Text style={styles.actionBtnText}>Download PDF</Text>
+              <Text style={styles.actionBtnText}>{t('invoices.download')}</Text>
             </TouchableOpacity>
           )}
-
           {onShare && (
             <TouchableOpacity
               style={[styles.actionBtn, styles.shareBtn]}
               onPress={() => onShare(invoice)}
             >
               <Text style={[styles.actionBtnText, styles.shareBtnText]}>
-                Share
+                {t('invoices.sharePdf')}
               </Text>
             </TouchableOpacity>
           )}

@@ -14,6 +14,7 @@ if backend_dir not in sys.path:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import api_v1_router
+from app.core.config import settings
 
 try:
     from backend.app.api.v1.sync import router as sync_router
@@ -26,10 +27,11 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Enable CORS for React Native mobile and web clients
+# CORS is restricted to CORS_ORIGINS (comma-separated). Credentials are
+# enabled, so a wildcard origin is not used.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

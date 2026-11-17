@@ -37,7 +37,8 @@ export async function getGstr1Preview(
                               THEN 1 ELSE 0 END), 0) AS missing
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
-     WHERE i.business_id = ? AND i.invoice_date BETWEEN ? AND ?`,
+     WHERE i.business_id = ? AND i.invoice_date BETWEEN ? AND ?
+       AND UPPER(i.payment_status) != 'CANCELLED'`,
     [businessId, fromDate, toDate]
   );
 

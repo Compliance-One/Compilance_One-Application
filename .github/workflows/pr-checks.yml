@@ -10,22 +10,6 @@ jobs:
   backend-checks:
     name: Backend Tests & DB Checks
     runs-on: ubuntu-latest
-    
-    # Spin up a live PostgreSQL container just for the GitHub Action
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: dev_user
-          POSTGRES_PASSWORD: dev_password
-          POSTGRES_DB: compliance_one_db
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - name: Checkout code
@@ -45,18 +29,19 @@ jobs:
 
       - name: Verify Alembic Migrations (Catch uncommitted schema changes)
         env:
-          DATABASE_URL: postgresql+asyncpg://dev_user:dev_password@localhost:5432/compliance_one_db
+          DATABASE_URL: sqlite+aiosqlite:///./data/compliance_one_ci.db
         run: |
           cd backend
           export PYTHONPATH=.
-          # 1. Apply all migrations to the temporary GitHub database
+          mkdir -p data
+          # 1. Apply all migrations to a fresh SQLite file
           alembic upgrade head
           # 2. Ensure models in entities.py match the DB schema perfectly
           alembic check
 
       - name: Run Pytest Test Suite
         env:
-          DATABASE_URL: postgresql+asyncpg://dev_user:dev_password@localhost:5432/compliance_one_db
+          DATABASE_URL: sqlite+aiosqlite:///./data/compliance_one_ci.db
         run: |
           cd backend
           export PYTHONPATH=.
@@ -90,5 +75,8 @@ jobs:
       - name: ESLint Check (Optional - if configured)
         run: |
           cd mobile
-          # Will run safely and pass if eslint isn't strictly enforced yet
-          npm run lint --if-present
+          if [ -f eslint.config.js ] || [ -f .eslintrc ] || [ -f .eslintrc.js ] || [ -f .eslintrc.json ]; then
+            npm run lint
+          else
+            echo "ESLint is not configured; skipping lint."
+          fi

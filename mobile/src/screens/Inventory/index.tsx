@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,7 +9,15 @@ import {
   Modal,
   Alert,
   ScrollView,
+  KeyboardAvoidingView,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { useTranslation } from 'react-i18next';
+import { Screen } from '../../ui';
+import { sanitizeDecimalInput } from '../../lib/numberInput';
+import { useAppStore } from '../../store/useAppStore';
+import { getDb } from '../../db/schema';
+import { adjustProductStock, listProducts } from '../../db/repositories';
 
 export type AdjustmentType = 'STOCK_IN' | 'STOCK_OUT' | 'DAMAGE' | 'AUDIT_CORRECTION';
 
@@ -37,73 +45,44 @@ export interface StockAdjustmentRecord {
   createdAt: string;
 }
 
-const INITIAL_INVENTORY: InventoryItem[] = [
-  {
-    id: 'inv_item_1',
-    productName: 'UltraTech Super Cement (50kg Bag)',
-    sku: 'CMT-ULT-50',
-    category: 'Building Materials',
-    unit: 'BAG',
-    unitCost: 330,
-    currentStock: 120,
-    reorderLevel: 30,
-    lastAdjustedAt: '2026-11-09T14:00:00Z',
-  },
-  {
-    id: 'inv_item_2',
-    productName: 'Havells Modular Switch 10A 1-Way',
-    sku: 'SW-HAV-10A',
-    category: 'Electricals',
-    unit: 'PCS',
-    unitCost: 95,
-    currentStock: 8,
-    reorderLevel: 25,
-    lastAdjustedAt: '2026-11-08T18:30:00Z',
-  },
-  {
-    id: 'inv_item_3',
-    productName: 'Asian Paints Apex Ultima White 20L',
-    sku: 'PNT-APX-20L',
-    category: 'Paints',
-    unit: 'CAN',
-    unitCost: 3450,
-    currentStock: 0,
-    reorderLevel: 5,
-    lastAdjustedAt: '2026-11-07T11:15:00Z',
-  },
-  {
-    id: 'inv_item_4',
-    productName: 'Industrial Ball Valve 2 Inch Brass',
-    sku: 'VLV-BRS-02',
-    category: 'Plumbing',
-    unit: 'PCS',
-    unitCost: 950,
-    currentStock: 45,
-    reorderLevel: 10,
-    lastAdjustedAt: '2026-11-05T09:20:00Z',
-  },
-  {
-    id: 'inv_item_5',
-    productName: 'High Tensile Hex Bolt M12 x 50mm',
-    sku: 'BLT-HT-1250',
-    category: 'Hardware',
-    unit: 'BOX',
-    unitCost: 360,
-    currentStock: 64,
-    reorderLevel: 15,
-    lastAdjustedAt: '2026-10-31T16:45:00Z',
-  },
-];
 
+// label is an i18n key under inventory.adjust*
 const ADJUSTMENT_OPTIONS: { type: AdjustmentType; label: string; color: string }[] = [
-  { type: 'STOCK_IN', label: 'Stock In (Purchase)', color: '#16A34A' },
-  { type: 'STOCK_OUT', label: 'Stock Out (Sale / Usage)', color: '#2563EB' },
-  { type: 'DAMAGE', label: 'Damage / Wastage', color: '#DC2626' },
-  { type: 'AUDIT_CORRECTION', label: 'Physical Audit Count', color: '#D97706' },
+  { type: 'STOCK_IN', label: 'inventory.adjustIn', color: '#16A34A' },
+  { type: 'STOCK_OUT', label: 'inventory.adjustOut', color: '#2563EB' },
+  { type: 'DAMAGE', label: 'inventory.adjustDamage', color: '#DC2626' },
+  { type: 'AUDIT_CORRECTION', label: 'inventory.adjustAudit', color: '#D97706' },
 ];
 
 export const InventoryScreen: React.FC = () => {
-  const [inventory, setInventory] = useState<InventoryItem[]>(INITIAL_INVENTORY);
+  const { t } = useTranslation();
+  const businessId = useAppStore((s) => s.business?.id);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+
+  const reload = useCallback(async () => {
+    if (!businessId) return;
+    const db = await getDb();
+    const products = await listProducts(db, businessId);
+    setInventory(
+      products.map((p) => ({
+        id: p.id,
+        productName: p.name,
+        sku: p.sku,
+        category: p.category,
+        unit: p.unit,
+        unitCost: p.purchasePrice || p.sellingPrice,
+        currentStock: p.currentStock,
+        reorderLevel: p.minStockLevel,
+        lastAdjustedAt: '',
+      }))
+    );
+  }, [businessId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void reload();
+    }, [reload])
+  );
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterMode, setFilterMode] = useState<'ALL' | 'LOW_STOCK' | 'OUT_OF_STOCK'>('ALL');
 
@@ -112,7 +91,7 @@ export const InventoryScreen: React.FC = () => {
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>('STOCK_IN');
   const [adjustQuantity, setAdjustQuantity] = useState<string>('10');
-  const [adjustReason, setAdjustReason] = useState<string>('Purchase Inward from Supplier');
+  const [adjustReason, setAdjustReason] = useState<string>('');
 
   // Metrics
   const { totalValuation, lowStockCount, outOfStockCount } = useMemo(() => {
@@ -155,15 +134,15 @@ export const InventoryScreen: React.FC = () => {
     setSelectedItem(item);
     setAdjustmentType('STOCK_IN');
     setAdjustQuantity('5');
-    setAdjustReason('PO Inward Goods Receipt');
+    setAdjustReason('');
     setIsAdjustModalVisible(true);
   };
 
   const handleApplyAdjustment = () => {
     if (!selectedItem) return;
-    const qty = parseInt(adjustQuantity, 10);
+    const qty = parseFloat(adjustQuantity);
     if (isNaN(qty) || qty <= 0) {
-      Alert.alert('Invalid Quantity', 'Please enter a positive numeric quantity.');
+      Alert.alert(t('inventory.invalidQtyTitle'), t('inventory.invalidQty'));
       return;
     }
 
@@ -175,7 +154,7 @@ export const InventoryScreen: React.FC = () => {
       newQty = selectedItem.currentStock + qty;
     } else if (adjustmentType === 'STOCK_OUT' || adjustmentType === 'DAMAGE') {
       if (selectedItem.currentStock < qty) {
-        Alert.alert('Insufficient Stock', `Available stock is only ${selectedItem.currentStock} ${selectedItem.unit}.`);
+        Alert.alert(t('inventory.insufficientTitle'), t('inventory.insufficientBody', { qty: selectedItem.currentStock, unit: selectedItem.unit }));
         return;
       }
       delta = -qty;
@@ -185,61 +164,58 @@ export const InventoryScreen: React.FC = () => {
       newQty = qty;
     }
 
-    const updated = inventory.map((it) =>
-      it.id === selectedItem.id
-        ? {
-            ...it,
-            currentStock: newQty,
-            lastAdjustedAt: new Date().toISOString(),
-          }
-        : it
-    );
-
-    setInventory(updated);
-    setIsAdjustModalVisible(false);
-
-    Alert.alert(
-      'Stock Adjusted',
-      `Inventory for "${selectedItem.productName}" updated to ${newQty} ${selectedItem.unit}.`
-    );
+    if (!businessId) return;
+    void (async () => {
+      try {
+        const db = await getDb();
+        await adjustProductStock(db, businessId, selectedItem.id, newQty);
+        await reload();
+        setIsAdjustModalVisible(false);
+        Alert.alert(
+          t('inventory.adjusted'),
+          t('inventory.adjustedBody', { name: selectedItem.productName, qty: newQty, unit: selectedItem.unit })
+        );
+      } catch (e) {
+        Alert.alert(t('common.error'), e instanceof Error ? e.message : String(e));
+      }
+    })();
   };
 
   const getStockStatusTag = (stock: number, reorder: number) => {
     if (stock <= 0) {
-      return { label: 'OUT OF STOCK', bg: '#FEE2E2', color: '#DC2626' };
+      return { label: t('inventory.outOfStock'), bg: '#FEE2E2', color: '#DC2626' };
     }
     if (stock <= reorder) {
-      return { label: 'LOW STOCK', bg: '#FEF3C7', color: '#D97706' };
+      return { label: t('inventory.lowStock'), bg: '#FEF3C7', color: '#D97706' };
     }
-    return { label: 'IN STOCK', bg: '#ECFDF5', color: '#059669' };
+    return { label: t('inventory.inStock'), bg: '#ECFDF5', color: '#059669' };
   };
 
   return (
-    <View style={styles.container}>
+    <Screen edges={['bottom']} scroll={false} style={styles.container}>
       {/* Top Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Inventory Management</Text>
-          <Text style={styles.subTitle}>Live Stock & Reorder Monitoring</Text>
+          <Text style={styles.subTitle}>{t('inventory.subtitle')}</Text>
         </View>
       </View>
 
       {/* KPI Cards */}
       <View style={styles.kpiGrid}>
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiLabel}>Stock Valuation</Text>
+          <Text style={styles.kpiLabel}>{t('inventory.stockValuation')}</Text>
           <Text style={styles.kpiValue}>
             ₹{totalValuation.toLocaleString('en-IN')}
           </Text>
         </View>
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiLabel}>Low Stock Alert</Text>
+          <Text style={styles.kpiLabel}>{t('inventory.lowStock')}</Text>
           <Text style={[styles.kpiValue, { color: '#D97706' }]}>
             {lowStockCount} Items
           </Text>
         </View>
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiLabel}>Out of Stock</Text>
+          <Text style={styles.kpiLabel}>{t('inventory.outOfStock')}</Text>
           <Text style={[styles.kpiValue, { color: '#DC2626' }]}>
             {outOfStockCount} Items
           </Text>
@@ -250,7 +226,7 @@ export const InventoryScreen: React.FC = () => {
       <View style={styles.searchBar}>
         <TextInput
           style={styles.searchInput}
-          placeholder="Search inventory by item name, SKU..."
+          placeholder={t('inventory.searchPlaceholder')}
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholderTextColor="#94A3B8"
@@ -320,7 +296,7 @@ export const InventoryScreen: React.FC = () => {
 
               <View style={styles.stockDetailsRow}>
                 <View style={styles.stockCol}>
-                  <Text style={styles.colLabel}>Current Stock</Text>
+                  <Text style={styles.colLabel}>{t('inventory.currentStock')}</Text>
                   <Text style={styles.stockNumber}>
                     {item.currentStock}{' '}
                     <Text style={styles.unitText}>{item.unit}</Text>
@@ -328,14 +304,14 @@ export const InventoryScreen: React.FC = () => {
                 </View>
 
                 <View style={styles.stockCol}>
-                  <Text style={styles.colLabel}>Reorder Level</Text>
+                  <Text style={styles.colLabel}>{t('inventory.reorderLevel')}</Text>
                   <Text style={styles.reorderNumber}>
                     {item.reorderLevel} {item.unit}
                   </Text>
                 </View>
 
                 <View style={styles.stockCol}>
-                  <Text style={styles.colLabel}>Asset Value</Text>
+                  <Text style={styles.colLabel}>{t('inventory.assetValue')}</Text>
                   <Text style={styles.assetValue}>
                     ₹{valuation.toLocaleString('en-IN')}
                   </Text>
@@ -344,14 +320,14 @@ export const InventoryScreen: React.FC = () => {
 
               <View style={styles.cardFooter}>
                 <Text style={styles.lastAdjustedText}>
-                  Cost: ₹{item.unitCost}/{item.unit}
+                  {t('inventory.costPer', { cost: item.unitCost, unit: item.unit })}
                 </Text>
 
                 <TouchableOpacity
                   style={styles.adjustBtn}
                   onPress={() => handleOpenAdjust(item)}
                 >
-                  <Text style={styles.adjustBtnText}>± Adjust Stock</Text>
+                  <Text style={styles.adjustBtnText}>{t('inventory.adjustBtn')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -360,8 +336,8 @@ export const InventoryScreen: React.FC = () => {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>📦</Text>
-            <Text style={styles.emptyTitle}>No Stock Records Found</Text>
-            <Text style={styles.emptySub}>No items match the selected filter.</Text>
+            <Text style={styles.emptyTitle}>{t('inventory.emptyTitle')}</Text>
+            <Text style={styles.emptySub}>{t('inventory.emptySub')}</Text>
           </View>
         }
       />
@@ -373,9 +349,9 @@ export const InventoryScreen: React.FC = () => {
         transparent
         onRequestClose={() => setIsAdjustModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Adjust Inventory Level</Text>
+            <Text style={styles.modalTitle}>{t('inventory.adjustTitle')}</Text>
             {selectedItem && (
               <Text style={styles.modalSubtitle}>
                 {selectedItem.productName} (Current: {selectedItem.currentStock} {selectedItem.unit})
@@ -383,7 +359,7 @@ export const InventoryScreen: React.FC = () => {
             )}
 
             <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.inputLabel}>Adjustment Reason / Type</Text>
+              <Text style={styles.inputLabel}>{t('inventory.reasonType')}</Text>
               <View style={styles.typeGrid}>
                 {ADJUSTMENT_OPTIONS.map((opt) => (
                   <TouchableOpacity
@@ -406,7 +382,7 @@ export const InventoryScreen: React.FC = () => {
                         },
                       ]}
                     >
-                      {opt.label}
+                      {t(opt.label)}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -414,24 +390,24 @@ export const InventoryScreen: React.FC = () => {
 
               <Text style={styles.inputLabel}>
                 {adjustmentType === 'AUDIT_CORRECTION'
-                  ? 'New Verified Physical Count'
-                  : 'Adjustment Quantity'}
+                  ? t('inventory.newCount')
+                  : t('inventory.adjustQty')}
               </Text>
               <TextInput
                 style={styles.modalInput}
-                keyboardType="numeric"
+                keyboardType="decimal-pad"
                 value={adjustQuantity}
-                onChangeText={setAdjustQuantity}
-                placeholder="Enter quantity"
+                onChangeText={(v) => setAdjustQuantity(sanitizeDecimalInput(v, 3))}
+                placeholder={t('inventory.qtyPlaceholder')}
               />
 
-              <Text style={styles.inputLabel}>Remarks / Reference No.</Text>
+              <Text style={styles.inputLabel}>{t('inventory.remarks')}</Text>
               <TextInput
                 style={[styles.modalInput, { height: 60 }]}
                 value={adjustReason}
                 onChangeText={setAdjustReason}
                 multiline
-                placeholder="e.g. GRN-2026-99 or physical audit mismatch"
+                placeholder={t('inventory.reasonPlaceholder')}
               />
             </ScrollView>
 
@@ -440,19 +416,19 @@ export const InventoryScreen: React.FC = () => {
                 style={styles.cancelBtn}
                 onPress={() => setIsAdjustModalVisible(false)}
               >
-                <Text style={styles.cancelBtnText}>Cancel</Text>
+                <Text style={styles.cancelBtnText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.confirmBtn}
                 onPress={handleApplyAdjustment}
               >
-                <Text style={styles.confirmBtnText}>Apply Adjustment</Text>
+                <Text style={styles.confirmBtnText}>{t('inventory.apply')}</Text>
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </Screen>
   );
 };
 

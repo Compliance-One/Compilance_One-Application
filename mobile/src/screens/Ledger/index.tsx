@@ -111,7 +111,7 @@ function Statement({ customer, onBack }: { customer: { id: string; name: string 
 
   return (
     <ScrollView contentContainerStyle={s.stmtContent}>
-      <ScreenHeader title={customer.name} onBack={onBack} />
+      <ScreenHeader title={customer.name} onBack={onBack} inner />
       <ReportState state={state} onRetry={reload}>
         {(entries) => {
           if (entries.length === 0) {

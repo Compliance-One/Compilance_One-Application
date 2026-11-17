@@ -4,11 +4,13 @@
  *
  * The file is a DRAFT: its shape has not been validated against the GST
  * offline tool yet, and the screen says so.
- * Sharing uses React Native's built-in Share (text). Saving a real .json file
- * needs expo-file-system, which is not in package.json yet.
+ * The JSON is written to a .json file via expo-file-system and shared with
+ * expo-sharing. A gstr1_exports row is recorded in SQLite.
  */
 import React, { useState } from 'react';
-import { ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { useTranslation } from 'react-i18next';
 import { colors, space, typo } from '../../theme';
 import { formatINR, pad2 } from '../../lib/format';
@@ -19,6 +21,8 @@ import { useReport } from '../../hooks/useReport';
 import type { ActiveBusiness } from '../../hooks/useReport';
 import { getGstr1Preview } from '../../gstr1/preview';
 import { generateGstr1Json } from '../../gstr1/generateGstr1';
+import { generateSimpleGstr1 } from '../../gstr1/simpleGstr1';
+import { recordGstr1Export } from '../../db/repositories';
 import {
   Banner,
   Card,
@@ -34,6 +38,7 @@ import type { ScreenProps } from '../../navigation/types';
 interface GeneratedFile {
   fileName: string;
   json: string;
+  path: string;
   total: number;
   b2b: number;
   b2c: number;
@@ -43,8 +48,8 @@ export default function Gstr1ExportScreen(_props: ScreenProps) {
   const { t } = useTranslation();
   const months = t('months', { returnObjects: true }) as unknown as string[];
 
-  // GSTR-1 is filed for the month that just ended, so start there.
-  const [ref, setRef] = useState<MonthRef>(() => shiftMonth(thisMonthRef(), -1));
+  // Default to this month; step back for the month that just ended.
+  const [ref, setRef] = useState<MonthRef>(() => thisMonthRef());
   const [file, setFile] = useState<GeneratedFile | null>(null);
   const [busy, setBusy] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
@@ -63,19 +68,69 @@ export default function Gstr1ExportScreen(_props: ScreenProps) {
     setRef((r) => shiftMonth(r, delta));
   }
 
+  /** GST JSON in the simple summary shape (works even before a GSTIN is added). */
+  async function generateSimple(business: ActiveBusiness) {
+    setBusy(true);
+    setGenError(null);
+    try {
+      const db = await getDb();
+      const result = await generateSimpleGstr1(db, business.id, business.gstin ?? '', range.from, range.to);
+      const fileName = `GST_${business.gstin || 'NOGSTIN'}_${range.from}_${range.to}.json`;
+      const json = JSON.stringify(result, null, 2);
+      const dir = FileSystem.documentDirectory;
+      if (!dir) throw new Error('No document directory available on this device');
+      const path = `${dir}${fileName}`;
+      await FileSystem.writeAsStringAsync(path, json, { encoding: FileSystem.EncodingType.UTF8 });
+      await recordGstr1Export(db, {
+        businessId: business.id,
+        periodFrom: range.from,
+        periodTo: range.to,
+        totalInvoices: result.total_invoices,
+        totalB2b: result.total_b2b,
+        totalB2c: result.total_b2c,
+        jsonFilePath: path,
+        status: 'generated',
+      });
+      const ready = { fileName, json, path, total: result.total_invoices, b2b: result.total_b2b, b2c: result.total_b2c };
+      setFile(ready);
+      await shareFile(ready);
+    } catch (e) {
+      setGenError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function generate(business: ActiveBusiness) {
     if (!business.gstin) return;
     setBusy(true);
     setGenError(null);
     try {
       const db = await getDb();
-      const payload = await generateGstr1Json(db, business.id, business.gstin, range.from, range.to);
+      const result = await generateGstr1Json(db, business.id, business.gstin, range.from, range.to);
+      const fileName = `GSTR1_${business.gstin}_${pad2(ref.month + 1)}${ref.year}.json`;
+      const json = JSON.stringify(result.payload, null, 2);
+      const dir = FileSystem.documentDirectory;
+      if (!dir) throw new Error('No document directory available on this device');
+      const path = `${dir}${fileName}`;
+      await FileSystem.writeAsStringAsync(path, json, { encoding: FileSystem.EncodingType.UTF8 });
+      await recordGstr1Export(db, {
+        businessId: business.id,
+        periodFrom: range.from,
+        periodTo: range.to,
+        totalInvoices: result.stats.total_invoices,
+        totalB2b: result.stats.total_b2b,
+        totalB2c: result.stats.total_b2c,
+        jsonFilePath: path,
+        status: 'generated',
+      });
       setFile({
-        fileName: `GSTR1_${business.gstin}_${pad2(ref.month + 1)}${ref.year}.json`,
-        json: JSON.stringify(payload, null, 2),
-        total: payload.total_invoices,
-        b2b: payload.total_b2b,
-        b2c: payload.total_b2c,
+        fileName,
+        json,
+        path,
+        total: result.stats.total_invoices,
+        b2b: result.stats.total_b2b,
+        b2c: result.stats.total_b2c,
       });
     } catch (e) {
       setGenError(e instanceof Error ? e.message : String(e));
@@ -85,9 +140,18 @@ export default function Gstr1ExportScreen(_props: ScreenProps) {
   }
 
   async function share() {
-    if (!file) return;
+    if (file) await shareFile(file);
+  }
+
+  async function shareFile(f: GeneratedFile) {
     try {
-      await Share.share({ title: file.fileName, message: file.json });
+      if (f.path && (await Sharing.isAvailableAsync())) {
+        await Sharing.shareAsync(f.path, {
+          mimeType: 'application/json',
+          dialogTitle: f.fileName,
+          UTI: 'public.json',
+        });
+      }
     } catch {
       /* the person closed the share sheet */
     }
@@ -129,10 +193,14 @@ export default function Gstr1ExportScreen(_props: ScreenProps) {
               {genError ? <Banner tone="warn" text={genError} /> : null}
 
               <PrimaryButton
-                label={busy ? t('gstr1Export.generating') : t('gstr1Export.generate')}
-                onPress={() => generate(business)}
-                disabled={noBills || noGstin}
+                label={busy ? t('gstr1Export.generating') : t('gstr1Export.downloadJson')}
+                onPress={() => generateSimple(business)}
+                disabled={noBills}
                 busy={busy}
+              />
+              <SecondaryButton
+                label={t('gstr1Export.generateOfficial')}
+                onPress={() => (noBills || noGstin || busy ? undefined : generate(business))}
               />
 
               {file ? (

@@ -61,7 +61,7 @@ async def get_balance_sheet(db: AsyncSession, business_id: uuid.UUID) -> dict:
     result = await db.execute(
         text(
             """
-            SELECT business_id, cash_and_bank, stock_value, receivables,
+            SELECT business_id, cash, bank, cash_and_bank, stock_value, receivables,
                    payables, owners_capital
             FROM v_balance_sheet
             WHERE business_id = :business_id
@@ -75,6 +75,8 @@ async def get_balance_sheet(db: AsyncSession, business_id: uuid.UUID) -> dict:
         # return a zeroed statement instead of raising.
         return {
             "business_id": business_id,
+            "cash": 0,
+            "bank": 0,
             "cash_and_bank": 0,
             "stock_value": 0,
             "receivables": 0,

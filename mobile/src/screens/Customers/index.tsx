@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,7 +9,18 @@ import {
   Modal,
   Alert,
   ScrollView,
+  KeyboardAvoidingView,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { useTranslation } from 'react-i18next';
+import { Screen } from '../../ui';
+import { DecimalInput } from '../../ui/DecimalInput';
+import { useAppStore } from '../../store/useAppStore';
+import { getDb } from '../../db/schema';
+import { listCustomers, upsertCustomer } from '../../db/repositories';
+import { newId } from '../../lib/id';
+import { INDIAN_STATES, isValidGstin, normalizeStateCode, stateNameFor } from '../../lib/gst';
+import { CONFIG } from '../../config/env';
 
 export interface Customer {
   id: string;
@@ -26,79 +37,24 @@ export interface Customer {
   creditLimit: number;
 }
 
-const INITIAL_CUSTOMERS: Customer[] = [
-  {
-    id: 'cust_1',
-    name: 'Bharat Industrial Supplies LLP',
-    tradeName: 'Bharat Supplies',
-    gstin: '27AABCB9876Q1ZB',
-    pan: 'AABCB9876Q',
-    phone: '+91 98220 12345',
-    email: 'accounts@bharatsupplies.com',
-    stateCode: '27',
-    stateName: 'Maharashtra',
-    billingAddress: 'Gala 102, Shanti Industrial Estate, Thane West, MH - 400601',
-    outstandingBalance: 148500,
-    creditLimit: 500000,
-  },
-  {
-    id: 'cust_2',
-    name: 'Bangalore Precision Forge Pvt Ltd',
-    tradeName: 'Bangalore Forge',
-    gstin: '29AACCH5678Q1Z2',
-    pan: 'AACCH5678Q',
-    phone: '+91 98450 78901',
-    email: 'billing@bengaluruforge.in',
-    stateCode: '29',
-    stateName: 'Karnataka',
-    billingAddress: 'Plot 44, Peenya 3rd Phase, Bangalore, KA - 560058',
-    outstandingBalance: 384200,
-    creditLimit: 1000000,
-  },
-  {
-    id: 'cust_3',
-    name: 'Rajesh Enterprises (Proprietor)',
-    tradeName: 'Rajesh Electricals',
-    gstin: '', // Unregistered consumer / composition
-    pan: 'BQZPR9912K',
-    phone: '+91 99300 45678',
-    email: 'rajeshelectricals@gmail.com',
-    stateCode: '27',
-    stateName: 'Maharashtra',
-    billingAddress: 'Shop 4, Station Road, Kalyan, MH - 421301',
-    outstandingBalance: 0,
-    creditLimit: 100000,
-  },
-  {
-    id: 'cust_4',
-    name: 'Capital Infrastructure Limited',
-    tradeName: 'Capital Infra',
-    gstin: '07AAECM7890K1Z9',
-    pan: 'AAECM7890K',
-    phone: '+91 98110 55443',
-    email: 'tax@capitalinfra.in',
-    stateCode: '07',
-    stateName: 'Delhi',
-    billingAddress: 'Building 12, Barakhamba Road, Connaught Place, New Delhi - 110001',
-    outstandingBalance: 512000,
-    creditLimit: 2500000,
-  },
-];
 
-const INDIAN_STATES = [
-  { code: '27', name: 'Maharashtra' },
-  { code: '29', name: 'Karnataka' },
-  { code: '07', name: 'Delhi' },
-  { code: '24', name: 'Gujarat' },
-  { code: '33', name: 'Tamil Nadu' },
-  { code: '36', name: 'Telangana' },
-  { code: '19', name: 'West Bengal' },
-  { code: '09', name: 'Uttar Pradesh' },
-  { code: '06', name: 'Haryana' },
-];
 
 export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
-  const [customers, setCustomers] = useState<Customer[]>(INITIAL_CUSTOMERS);
+  const { t } = useTranslation();
+  const businessId = useAppStore((s) => s.business?.id);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+
+  const reload = useCallback(async () => {
+    if (!businessId) return;
+    const db = await getDb();
+    setCustomers(await listCustomers(db, businessId));
+  }, [businessId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void reload();
+    }, [reload])
+  );
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterType, setFilterType] = useState<'ALL' | 'WITH_GSTIN' | 'OUTSTANDING'>('ALL');
   const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
@@ -112,8 +68,8 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
     pan: '',
     phone: '',
     email: '',
-    stateCode: '27',
-    stateName: 'Maharashtra',
+    stateCode: CONFIG.DEFAULT_STATE_CODE,
+    stateName: stateNameFor(CONFIG.DEFAULT_STATE_CODE),
     billingAddress: '',
     outstandingBalance: 0,
     creditLimit: 200000,
@@ -147,11 +103,10 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
     let pan = formData.pan;
 
     if (clean.length >= 2) {
-      const code = clean.substring(0, 2);
-      const match = INDIAN_STATES.find((s) => s.code === code);
-      if (match) {
-        stateCode = match.code;
-        stateName = match.name;
+      const code = normalizeStateCode(clean.substring(0, 2));
+      if (code) {
+        stateCode = code;
+        stateName = stateNameFor(code);
       }
     }
 
@@ -170,15 +125,15 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
 
   const handleOpenAddModal = () => {
     setFormData({
-      id: `cust_${Date.now()}`,
+      id: newId(),
       name: '',
       tradeName: '',
       gstin: '',
       pan: '',
       phone: '',
       email: '',
-      stateCode: '27',
-      stateName: 'Maharashtra',
+      stateCode: CONFIG.DEFAULT_STATE_CODE,
+      stateName: stateNameFor(CONFIG.DEFAULT_STATE_CODE),
       billingAddress: '',
       outstandingBalance: 0,
       creditLimit: 200000,
@@ -193,29 +148,33 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
 
   const handleSaveCustomer = () => {
     if (!formData.name.trim()) {
-      Alert.alert('Validation Error', 'Customer Legal Name is required.');
-      return;
-    }
-    if (!formData.phone.trim()) {
-      Alert.alert('Validation Error', 'Phone number is required for invoicing.');
+      Alert.alert(t('common.validationError'), t('customers.nameRequired'));
       return;
     }
 
-    const existingIndex = customers.findIndex((c) => c.id === formData.id);
-    if (existingIndex >= 0) {
-      const updated = [...customers];
-      updated[existingIndex] = formData;
-      setCustomers(updated);
-    } else {
-      setCustomers([formData, ...customers]);
+    if (formData.gstin && !isValidGstin(formData.gstin)) {
+      Alert.alert(t('customers.invalidGstin'));
+      return;
     }
-    setIsModalVisible(false);
+    if (!businessId) return;
+    const isNew = customers.findIndex((c) => c.id === formData.id) < 0;
+    void (async () => {
+      try {
+        const db = await getDb();
+        await upsertCustomer(db, businessId, formData, isNew);
+        await reload();
+        setIsModalVisible(false);
+      } catch (e) {
+        Alert.alert(t('common.error'), e instanceof Error ? e.message : String(e));
+      }
+    })();
   };
 
   const handleCreateInvoiceForCustomer = (cust: Customer) => {
     if (navigation?.navigate) {
       navigation.navigate('InvoiceCreate', {
         initialCustomer: {
+          id: cust.id,
           name: cust.name,
           gstin: cust.gstin,
           phone: cust.phone,
@@ -225,20 +184,19 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
         },
       });
     } else {
-      Alert.alert('Invoicing', `Opening invoice form for ${cust.name}`);
+      Alert.alert(t('customers.invoicing'), t('customers.openingInvoice', { name: cust.name }));
     }
   };
 
   return (
-    <View style={styles.container}>
+    <Screen edges={['bottom']} scroll={false} style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Customers Directory</Text>
-          <Text style={styles.subTitle}>Client GSTINs & Master Records</Text>
+          <Text style={styles.subTitle}>{t('customers.subtitle')}</Text>
         </View>
         <TouchableOpacity style={styles.addBtn} onPress={handleOpenAddModal}>
-          <Text style={styles.addBtnText}>+ Add Customer</Text>
+          <Text style={styles.addBtnText}>{t('customers.addBtn')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -246,7 +204,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
       <View style={styles.searchBar}>
         <TextInput
           style={styles.searchInput}
-          placeholder="Search customer by name, GSTIN, phone..."
+          placeholder={t('customers.searchPlaceholder')}
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholderTextColor="#94A3B8"
@@ -305,24 +263,24 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
               <View style={{ flex: 1, marginRight: 8 }}>
                 <Text style={styles.custName}>{item.name}</Text>
                 {item.tradeName ? (
-                  <Text style={styles.tradeName}>Trade: {item.tradeName}</Text>
+                  <Text style={styles.tradeName}>{t('customers.trade')}: {item.tradeName}</Text>
                 ) : null}
               </View>
 
               {item.gstin ? (
                 <View style={styles.gstinBadge}>
-                  <Text style={styles.gstinBadgeText}>GSTIN VERIFIED</Text>
+                  <Text style={styles.gstinBadgeText}>{t('customers.gstinVerified')}</Text>
                 </View>
               ) : (
                 <View style={styles.unregisteredBadge}>
-                  <Text style={styles.unregisteredBadgeText}>UNREGISTERED</Text>
+                  <Text style={styles.unregisteredBadgeText}>{t('customers.unregistered')}</Text>
                 </View>
               )}
             </View>
 
             <View style={styles.detailsGrid}>
               <Text style={styles.detailText}>
-                GSTIN: <Text style={styles.detailVal}>{item.gstin || 'None (Consumer)'}</Text>
+                GSTIN: <Text style={styles.detailVal}>{item.gstin || t('customers.noneConsumer')}</Text>
               </Text>
               <Text style={styles.detailText}>
                 State: <Text style={styles.detailVal}>{item.stateName} ({item.stateCode})</Text>
@@ -337,7 +295,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
 
             <View style={styles.balanceRow}>
               <View>
-                <Text style={styles.balanceLabel}>Outstanding Balance</Text>
+                <Text style={styles.balanceLabel}>{t('customers.outstanding')}</Text>
                 <Text
                   style={[
                     styles.balanceVal,
@@ -353,14 +311,14 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                   style={styles.actionBtnEdit}
                   onPress={() => handleOpenEditModal(item)}
                 >
-                  <Text style={styles.actionTextEdit}>Edit</Text>
+                  <Text style={styles.actionTextEdit}>{t('customers.edit')}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.actionBtnInvoice}
                   onPress={() => handleCreateInvoiceForCustomer(item)}
                 >
-                  <Text style={styles.actionTextInvoice}>+ Invoice</Text>
+                  <Text style={styles.actionTextInvoice}>{t('customers.newBillBtn')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -369,7 +327,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>👥</Text>
-            <Text style={styles.emptyTitle}>No Customers Found</Text>
+            <Text style={styles.emptyTitle}>{t('customers.emptyTitle')}</Text>
             <Text style={styles.emptySub}>
               Tap "+ Add Customer" to add your first client profile.
             </Text>
@@ -384,73 +342,73 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
         transparent
         onRequestClose={() => setIsModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>
               {customers.some((c) => c.id === formData.id)
-                ? 'Edit Customer Details'
-                : 'Add New Customer'}
+                ? t('customers.editTitle')
+                : t('customers.addTitle')}
             </Text>
 
             <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.label}>Legal Business / Party Name *</Text>
+              <Text style={styles.label}>{t('customers.legalNameLabel')}</Text>
               <TextInput
                 style={styles.modalInput}
                 value={formData.name}
                 onChangeText={(val) => setFormData({ ...formData, name: val })}
-                placeholder="e.g. Acme Industrial Solutions Pvt Ltd"
+                placeholder={t('customers.legalNamePlaceholder')}
               />
 
-              <Text style={styles.label}>Trade Name (Optional)</Text>
+              <Text style={styles.label}>{t('customers.tradeNameLabel')}</Text>
               <TextInput
                 style={styles.modalInput}
                 value={formData.tradeName}
                 onChangeText={(val) => setFormData({ ...formData, tradeName: val })}
-                placeholder="e.g. Acme Hardware"
+                placeholder={t('customers.tradeNamePlaceholder')}
               />
 
               <View style={styles.formRow}>
                 <View style={{ flex: 1.3, marginRight: 8 }}>
-                  <Text style={styles.label}>GSTIN (15 Digits)</Text>
+                  <Text style={styles.label}>{t('customers.gstinLabel')}</Text>
                   <TextInput
                     style={styles.modalInput}
                     value={formData.gstin}
                     onChangeText={handleGstinInput}
-                    placeholder="27AA..."
+                    placeholder={t('customers.gstinPlaceholder')}
                     autoCapitalize="characters"
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>PAN</Text>
+                  <Text style={styles.label}>{t('customers.pan')}</Text>
                   <TextInput
                     style={styles.modalInput}
                     value={formData.pan}
                     onChangeText={(val) =>
                       setFormData({ ...formData, pan: val.toUpperCase() })
                     }
-                    placeholder="Auto from GST"
+                    placeholder={t('customers.autoFromGst')}
                   />
                 </View>
               </View>
 
               <View style={styles.formRow}>
                 <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.label}>Phone Number *</Text>
+                  <Text style={styles.label}>{t('customers.phoneLabel')}</Text>
                   <TextInput
                     style={styles.modalInput}
                     value={formData.phone}
                     onChangeText={(val) => setFormData({ ...formData, phone: val })}
-                    placeholder="+91..."
+                    placeholder={t('customers.phonePlaceholder')}
                     keyboardType="phone-pad"
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Email Address</Text>
+                  <Text style={styles.label}>{t('customers.emailLabel')}</Text>
                   <TextInput
                     style={styles.modalInput}
                     value={formData.email}
                     onChangeText={(val) => setFormData({ ...formData, email: val })}
-                    placeholder="billing@..."
+                    placeholder={t('customers.emailPlaceholder')}
                     keyboardType="email-address"
                     autoCapitalize="none"
                   />
@@ -459,7 +417,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
 
               <View style={styles.formRow}>
                 <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.label}>State Code</Text>
+                  <Text style={styles.label}>{t('customers.stateCode')}</Text>
                   <TextInput
                     style={styles.modalInput}
                     value={`${formData.stateName} (${formData.stateCode})`}
@@ -469,22 +427,16 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Credit Limit (₹)</Text>
-                  <TextInput
+                  <Text style={styles.label}>{t('customers.creditLimit')}</Text>
+                  <DecimalInput
                     style={styles.modalInput}
-                    value={formData.creditLimit.toString()}
-                    keyboardType="numeric"
-                    onChangeText={(val) =>
-                      setFormData({
-                        ...formData,
-                        creditLimit: parseFloat(val) || 0,
-                      })
-                    }
+                    value={formData.creditLimit}
+                    onValue={(n) => setFormData((prev) => ({ ...prev, creditLimit: n }))}
                   />
                 </View>
               </View>
 
-              <Text style={styles.label}>Billing Address</Text>
+              <Text style={styles.label}>{t('customers.billingAddress')}</Text>
               <TextInput
                 style={[styles.modalInput, { height: 60 }]}
                 value={formData.billingAddress}
@@ -492,7 +444,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                   setFormData({ ...formData, billingAddress: val })
                 }
                 multiline
-                placeholder="Door No, Street, City, Pincode"
+                placeholder={t('customers.addressPlaceholder')}
               />
             </ScrollView>
 
@@ -501,19 +453,19 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                 style={styles.cancelBtn}
                 onPress={() => setIsModalVisible(false)}
               >
-                <Text style={styles.cancelBtnText}>Cancel</Text>
+                <Text style={styles.cancelBtnText}>{t('customers.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.saveBtn}
                 onPress={handleSaveCustomer}
               >
-                <Text style={styles.saveBtnText}>Save Customer</Text>
+                <Text style={styles.saveBtnText}>{t('customers.save')}</Text>
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </Screen>
   );
 };
 
