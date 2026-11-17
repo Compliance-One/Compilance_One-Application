@@ -37,6 +37,8 @@ const SYNC_FIELDS: Record<string, string[]> = {
     'voice_language',
     'offline_mode',
     'printer_settings',
+    'opening_cash_balance',
+    'opening_bank_balance',
     'created_at',
   ],
   products: [
@@ -97,7 +99,7 @@ const SYNC_FIELDS: Record<string, string[]> = {
     'description',
     'entry_date',
   ],
-  expenses: ['id', 'business_id', 'category', 'description', 'amount', 'expense_date', 'created_at'],
+  expenses: ['id', 'business_id', 'category', 'description', 'amount', 'expense_date', 'payment_mode', 'created_at'],
   suppliers: ['id', 'business_id', 'name', 'gstin', 'phone', 'address', 'created_at'],
   purchases: [
     'id',
@@ -107,6 +109,7 @@ const SYNC_FIELDS: Record<string, string[]> = {
     'purchase_date',
     'amount',
     'payment_status',
+    'payment_mode',
     'created_at',
   ],
   voice_transaction_logs: [

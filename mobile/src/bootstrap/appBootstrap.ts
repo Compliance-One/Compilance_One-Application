@@ -1,25 +1,20 @@
+import { hydrateAuth, installRefreshHandler } from '../auth/session';
 import { getDb } from '../db/schema';
-import { seedDefaultBusiness } from '../db/repositories';
 import { hydrateLanguage } from '../i18n';
 import { useAppStore } from '../store/useAppStore';
+import { startRuntimeSync, stopRuntimeSync } from '../sync/lifecycle';
 import { NetworkListener } from '../sync/netListener';
-import { startSyncLoop } from '../sync/syncManager';
 
 /**
- * Opens SQLite (running migrations), hydrates the active business into the
- * Zustand store, starts the network listener and the sync loop.
- * Returns a cleanup function that stops both background tasks.
+ * Opens SQLite (running migrations), hydrates auth + the active business into
+ * the Zustand store when a session exists, starts the network listener, and
+ * starts the sync loop only after the user is authenticated.
  */
 export async function bootstrapApp(): Promise<() => void> {
   await hydrateLanguage();
-  const db = await getDb();
-  const business = await seedDefaultBusiness(db);
-  useAppStore.getState().setBusiness({
-    id: business.id,
-    name: business.name,
-    gstin: business.gstin ?? undefined,
-    stateCode: business.stateCode,
-  });
+  await getDb();
+  installRefreshHandler();
+  const authed = await hydrateAuth();
 
   const listener = new NetworkListener();
   const current = await listener.checkCurrentStatus();
@@ -28,17 +23,10 @@ export async function bootstrapApp(): Promise<() => void> {
     useAppStore.getState().setOnlineStatus(isOnline, networkType);
   });
 
-  const stopSync = startSyncLoop(
-    db,
-    () => useAppStore.getState().business?.id ?? null,
-    (count) => {
-      useAppStore.getState().setPendingSyncCount(count);
-      if (count === 0) useAppStore.getState().setLastSyncedAt(new Date().toISOString());
-    }
-  );
+  if (authed) await startRuntimeSync();
 
   return () => {
-    stopSync();
+    stopRuntimeSync();
     listener.stopListening();
   };
 }

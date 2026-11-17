@@ -1,6 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
 
@@ -68,6 +68,8 @@ const CREATE_TABLES_SQL = `
       offline_mode INTEGER DEFAULT 1,
       printer_settings TEXT,
       state_code TEXT DEFAULT '33',
+      opening_cash_balance REAL DEFAULT 0,
+      opening_bank_balance REAL DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
@@ -184,6 +186,7 @@ const CREATE_TABLES_SQL = `
       description TEXT,
       amount REAL NOT NULL,
       expense_date TEXT NOT NULL,
+      payment_mode TEXT DEFAULT 'CASH',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
@@ -209,6 +212,7 @@ const CREATE_TABLES_SQL = `
       purchase_date TEXT,
       amount REAL NOT NULL,
       payment_status TEXT,
+      payment_mode TEXT DEFAULT 'CASH',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE,
@@ -368,6 +372,15 @@ export const migrate = async (db: SQLite.SQLiteDatabase): Promise<void> => {
 
     await db.execAsync(CUSTOMER_BALANCES_VIEW);
     await db.execAsync('PRAGMA user_version = 1');
+  }
+
+  if (current < 2) {
+    await addColumnIfMissing(db, 'expenses', 'payment_mode', "TEXT DEFAULT 'CASH'");
+    await addColumnIfMissing(db, 'purchases', 'payment_mode', "TEXT DEFAULT 'CASH'");
+    await addColumnIfMissing(db, 'businesses', 'opening_cash_balance', 'REAL DEFAULT 0');
+    await addColumnIfMissing(db, 'businesses', 'opening_bank_balance', 'REAL DEFAULT 0');
+    await db.execAsync(CUSTOMER_BALANCES_VIEW);
+    await db.execAsync('PRAGMA user_version = 2');
   }
 
   // Always ensure the view exists (fresh installs go through CREATE TABLE IF NOT EXISTS
