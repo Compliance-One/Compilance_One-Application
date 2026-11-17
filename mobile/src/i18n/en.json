@@ -32,14 +32,18 @@
     "reports": "Reports",
     "ledger": "Ledger",
     "gstr1": "GSTR-1",
-    "settings": "Settings"
+    "settings": "Settings",
+    "invoices": "Invoices",
+    "products": "Products",
+    "customers": "Customers",
+    "inventory": "Inventory"
   },
   "dashboard": {
     "title": "Home",
     "greeting": "Hello",
     "profitThisMonth": "Profit this month",
     "lossThisMonth": "Loss this month",
-    "sales": "Sales",
+    "sales": "Sales before GST",
     "expenses": "Expenses",
     "billsCount": "Bills this month",
     "gstCollected": "GST collected",
@@ -55,7 +59,14 @@
     "totalInvoices": "Total Invoices",
     "taxableAmount": "Taxable Amount",
     "totalGst": "Total GST",
-    "offline": "Offline"
+    "offline": "Offline",
+    "billedInclGst": "Billed (incl. GST)",
+    "voiceBilling": "Voice billing",
+    "voiceBillingHint": "Speak a bill in Tamil or English",
+    "newInvoice": "New invoice",
+    "newInvoiceHint": "Create a GST tax invoice",
+    "customersHint": "Customers and outstanding balances",
+    "inventoryHint": "Stock on hand and adjustments"
   },
   "reports": {
     "title": "Reports",
@@ -147,6 +158,39 @@
     "gstSettings": "GST Settings",
     "printerSettings": "Printer Settings",
     "backupRestore": "Backup & Restore",
-    "offlineMode": "Offline Mode"
+    "offlineMode": "Offline Mode",
+    "save": "Save business",
+    "saved": "Business details saved",
+    "name": "Business name",
+    "state": "State",
+    "invalidGstin": "Enter a valid 15-character GSTIN, or leave it blank."
+  },
+  "voiceBilling": {
+    "title": "Voice Billing",
+    "proceed": "Continue to invoice",
+    "empty": "Add at least one item before continuing.",
+    "listening": "Listening…",
+    "processing": "Understanding…"
+  },
+  "invoiceCreate": {
+    "title": "New Tax Invoice",
+    "submit": "Create invoice",
+    "created": "Invoice saved",
+    "createdBody": "Invoice #{{number}} for {{amount}} has been saved on this device and queued for sync.",
+    "viewInvoices": "View invoices",
+    "missingCustomer": "Please specify a customer name.",
+    "noItems": "Please add at least one line item.",
+    "invalidGstin": "Enter a valid 15-character GSTIN, or leave it blank.",
+    "missingBusiness": "No active business on this device."
+  },
+  "customers": {
+    "title": "Customers",
+    "invalidGstin": "Enter a valid 15-character GSTIN, or leave it blank."
+  },
+  "products": {
+    "title": "Products"
+  },
+  "inventory": {
+    "title": "Inventory"
   }
 }

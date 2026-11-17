@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,6 +10,11 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { useTranslation } from 'react-i18next';
+import { useAppStore } from '../../store/useAppStore';
+import { getDb } from '../../db/schema';
+import { adjustProductStock, listProducts } from '../../db/repositories';
 
 export type AdjustmentType = 'STOCK_IN' | 'STOCK_OUT' | 'DAMAGE' | 'AUDIT_CORRECTION';
 
@@ -37,63 +42,6 @@ export interface StockAdjustmentRecord {
   createdAt: string;
 }
 
-const INITIAL_INVENTORY: InventoryItem[] = [
-  {
-    id: 'inv_item_1',
-    productName: 'UltraTech Super Cement (50kg Bag)',
-    sku: 'CMT-ULT-50',
-    category: 'Building Materials',
-    unit: 'BAG',
-    unitCost: 330,
-    currentStock: 120,
-    reorderLevel: 30,
-    lastAdjustedAt: '2026-11-09T14:00:00Z',
-  },
-  {
-    id: 'inv_item_2',
-    productName: 'Havells Modular Switch 10A 1-Way',
-    sku: 'SW-HAV-10A',
-    category: 'Electricals',
-    unit: 'PCS',
-    unitCost: 95,
-    currentStock: 8,
-    reorderLevel: 25,
-    lastAdjustedAt: '2026-11-08T18:30:00Z',
-  },
-  {
-    id: 'inv_item_3',
-    productName: 'Asian Paints Apex Ultima White 20L',
-    sku: 'PNT-APX-20L',
-    category: 'Paints',
-    unit: 'CAN',
-    unitCost: 3450,
-    currentStock: 0,
-    reorderLevel: 5,
-    lastAdjustedAt: '2026-11-07T11:15:00Z',
-  },
-  {
-    id: 'inv_item_4',
-    productName: 'Industrial Ball Valve 2 Inch Brass',
-    sku: 'VLV-BRS-02',
-    category: 'Plumbing',
-    unit: 'PCS',
-    unitCost: 950,
-    currentStock: 45,
-    reorderLevel: 10,
-    lastAdjustedAt: '2026-11-05T09:20:00Z',
-  },
-  {
-    id: 'inv_item_5',
-    productName: 'High Tensile Hex Bolt M12 x 50mm',
-    sku: 'BLT-HT-1250',
-    category: 'Hardware',
-    unit: 'BOX',
-    unitCost: 360,
-    currentStock: 64,
-    reorderLevel: 15,
-    lastAdjustedAt: '2026-10-31T16:45:00Z',
-  },
-];
 
 const ADJUSTMENT_OPTIONS: { type: AdjustmentType; label: string; color: string }[] = [
   { type: 'STOCK_IN', label: 'Stock In (Purchase)', color: '#16A34A' },
@@ -103,7 +51,34 @@ const ADJUSTMENT_OPTIONS: { type: AdjustmentType; label: string; color: string }
 ];
 
 export const InventoryScreen: React.FC = () => {
-  const [inventory, setInventory] = useState<InventoryItem[]>(INITIAL_INVENTORY);
+  const { t } = useTranslation();
+  const businessId = useAppStore((s) => s.business?.id);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+
+  const reload = useCallback(async () => {
+    if (!businessId) return;
+    const db = await getDb();
+    const products = await listProducts(db, businessId);
+    setInventory(
+      products.map((p) => ({
+        id: p.id,
+        productName: p.name,
+        sku: p.sku,
+        category: p.category,
+        unit: p.unit,
+        unitCost: p.purchasePrice || p.sellingPrice,
+        currentStock: p.currentStock,
+        reorderLevel: p.minStockLevel,
+        lastAdjustedAt: '',
+      }))
+    );
+  }, [businessId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void reload();
+    }, [reload])
+  );
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterMode, setFilterMode] = useState<'ALL' | 'LOW_STOCK' | 'OUT_OF_STOCK'>('ALL');
 
@@ -185,23 +160,21 @@ export const InventoryScreen: React.FC = () => {
       newQty = qty;
     }
 
-    const updated = inventory.map((it) =>
-      it.id === selectedItem.id
-        ? {
-            ...it,
-            currentStock: newQty,
-            lastAdjustedAt: new Date().toISOString(),
-          }
-        : it
-    );
-
-    setInventory(updated);
-    setIsAdjustModalVisible(false);
-
-    Alert.alert(
-      'Stock Adjusted',
-      `Inventory for "${selectedItem.productName}" updated to ${newQty} ${selectedItem.unit}.`
-    );
+    if (!businessId) return;
+    void (async () => {
+      try {
+        const db = await getDb();
+        await adjustProductStock(db, businessId, selectedItem.id, newQty);
+        await reload();
+        setIsAdjustModalVisible(false);
+        Alert.alert(
+          'Stock Adjusted',
+          `Inventory for "${selectedItem.productName}" updated to ${newQty} ${selectedItem.unit}.`
+        );
+      } catch (e) {
+        Alert.alert('Error', e instanceof Error ? e.message : String(e));
+      }
+    })();
   };
 
   const getStockStatusTag = (stock: number, reorder: number) => {
@@ -219,7 +192,7 @@ export const InventoryScreen: React.FC = () => {
       {/* Top Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Inventory Management</Text>
+          <Text style={styles.title}>{t('inventory.title')}</Text>
           <Text style={styles.subTitle}>Live Stock & Reorder Monitoring</Text>
         </View>
       </View>

@@ -1,6 +1,6 @@
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 
-type NetworkCallback = (isConnected: boolean) => void;
+type NetworkCallback = (isConnected: boolean, networkType?: string) => void;
 
 export class NetworkListener {
   private unsubscribe: (() => void) | null = null;
@@ -8,7 +8,7 @@ export class NetworkListener {
   startListening(callback: NetworkCallback): void {
     this.unsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
       const isOnline = Boolean(state.isConnected && state.isInternetReachable !== false);
-      callback(isOnline);
+      callback(isOnline, state.type);
     });
   }
 

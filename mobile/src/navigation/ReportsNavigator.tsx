@@ -16,6 +16,15 @@ import { useTranslation } from 'react-i18next';
 import '../i18n';
 import { colors, radius, space, typo } from '../theme';
 import type { RouteName, ScreenProps } from './types';
+
+type ReportRouteName =
+  | 'dashboard'
+  | 'reports'
+  | 'ledger'
+  | 'gstr1'
+  | 'settings'
+  | 'profitLoss'
+  | 'balanceSheet';
 import DashboardScreen from '../screens/Dashboard';
 import ReportsScreen from '../screens/Reports';
 import LedgerScreen from '../screens/Ledger';
@@ -27,7 +36,7 @@ import BalanceSheetScreen from '../screens/BalanceSheet';
 const TABS = ['dashboard', 'reports', 'ledger', 'gstr1', 'settings'] as const;
 type TabName = (typeof TABS)[number];
 
-const SCREENS: Record<RouteName, ComponentType<ScreenProps>> = {
+const SCREENS: Record<ReportRouteName, ComponentType<ScreenProps>> = {
   dashboard: DashboardScreen,
   reports: ReportsScreen,
   ledger: LedgerScreen,
@@ -45,18 +54,20 @@ const TAB_LABEL_KEY: Record<TabName, string> = {
   settings: 'tabs.settings',
 };
 
-function isTab(route: RouteName): route is TabName {
+function isTab(route: ReportRouteName): route is TabName {
   return (TABS as ReadonlyArray<string>).includes(route);
 }
 
 export default function ReportsNavigator() {
   const { t } = useTranslation();
-  const [stack, setStack] = useState<RouteName[]>(['dashboard']);
+  const [stack, setStack] = useState<ReportRouteName[]>(['dashboard']);
   const current = stack[stack.length - 1];
   const activeTab = stack[0] as TabName;
 
   const navigate = useCallback((route: RouteName) => {
-    setStack((s) => (isTab(route) ? [route] : [...s, route]));
+    if (!(route in SCREENS)) return;
+    const r = route as ReportRouteName;
+    setStack((s) => (isTab(r) ? [r] : [...s, r]));
   }, []);
 
   const back = useCallback(() => {

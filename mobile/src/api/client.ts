@@ -1,13 +1,11 @@
-const BASE_URL = 'http://10.0.2.2:8000/api/v1'; // Android emulator host alias; use LAN IP for physical device
+import { CONFIG } from '../config/env';
 
-export interface SyncPushPayload {
-  items: Array<{
-    outbox_id: number;
-    entity_type: string;
-    entity_id: string;
-    operation: 'INSERT' | 'UPDATE' | 'DELETE';
-    data: Record<string, unknown>;
-  }>;
+export interface SyncPushItem {
+  outbox_id: number;
+  entity_type: string;
+  entity_id: string;
+  operation: 'INSERT' | 'UPDATE' | 'DELETE';
+  data: Record<string, unknown>;
 }
 
 export interface SyncPushResponse {
@@ -15,31 +13,48 @@ export interface SyncPushResponse {
   failed_ids: number[];
 }
 
+export interface SyncPullResponse {
+  server_time: string;
+  changes: Record<string, Array<Record<string, unknown>>>;
+}
+
 export class ApiClient {
   private token: string | null = null;
+  constructor(private baseUrl: string = CONFIG.API_BASE_URL) {}
 
-  setAuthToken(token: string): void {
+  setAuthToken(token: string | null): void {
     this.token = token;
   }
 
-  async pushBatch(payload: SyncPushPayload): Promise<SyncPushResponse> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
-    }
+  private headers(): Record<string, string> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.token) headers.Authorization = `Bearer ${this.token}`;
+    return headers;
+  }
 
-    const response = await fetch(`${BASE_URL}/sync/push`, {
+  async pushSync(items: SyncPushItem[]): Promise<SyncPushResponse> {
+    const response = await fetch(`${this.baseUrl}/sync/push`, {
       method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
+      headers: this.headers(),
+      body: JSON.stringify({ items }),
     });
-
     if (!response.ok) {
-      throw new Error(`Sync push failed with status: ${response.status}`);
+      const errText = await response.text();
+      throw new Error(`Sync Push failed (${response.status}): ${errText}`);
     }
-
     return (await response.json()) as SyncPushResponse;
   }
+
+  async pullSync(businessId: string, sinceIsoString?: string): Promise<SyncPullResponse> {
+    let url = `${this.baseUrl}/sync/pull?business_id=${encodeURIComponent(businessId)}`;
+    if (sinceIsoString) url += `&since=${encodeURIComponent(sinceIsoString)}`;
+    const response = await fetch(url, { method: 'GET', headers: this.headers() });
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Sync Pull failed (${response.status}): ${errText}`);
+    }
+    return (await response.json()) as SyncPullResponse;
+  }
 }
+
+export const apiClient = new ApiClient();

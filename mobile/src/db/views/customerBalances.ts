@@ -32,7 +32,7 @@ export async function getCustomerBalances(
     `SELECT customer_id, balance
      FROM v_customer_balances
      WHERE business_id = ?
-     ORDER BY balance DESC`,
+     ORDER BY balance ASC`,
     [businessId]
   );
   return rows.map((r) => ({ customerId: r.customer_id, balance: r.balance }));

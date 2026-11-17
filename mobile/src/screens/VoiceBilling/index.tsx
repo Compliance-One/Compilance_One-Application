@@ -10,7 +10,11 @@ import {
   Animated,
   Alert,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../store/useAppStore';
+import { CONFIG } from '../../config/env';
+import { formatINR } from '../../lib/format';
+import { calculateInvoiceTotals, normalizeStateCode, stateCodeFromGstin } from '../../lib/gst';
 
 export interface ParsedItem {
   id: string;
@@ -34,33 +38,15 @@ const SAMPLE_VOICE_COMMANDS = [
 export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = ({
   navigation,
 }) => {
+  const { t } = useTranslation();
   const { business } = useAppStore();
+  const sellerStateCode = business?.stateCode || CONFIG.DEFAULT_STATE_CODE;
   const [recordingState, setRecordingState] = useState<RecordingState>('IDLE');
   const [transcript, setTranscript] = useState<string>('');
-  const [customerName, setCustomerName] = useState<string>('Om Hardware & Electricals');
-  const [customerGstin, setCustomerGstin] = useState<string>('27AACCG1122D1Z8');
-  const [parsedItems, setParsedItems] = useState<ParsedItem[]>([
-    {
-      id: 'item_1',
-      name: 'UltraTech Super Cement (50kg)',
-      quantity: 5,
-      unit: 'BAG',
-      unitPrice: 380,
-      taxRate: 28,
-      hsnCode: '252329',
-      total: 5 * 380 * 1.28,
-    },
-    {
-      id: 'item_2',
-      name: 'Havells Modular Switch 10A',
-      quantity: 12,
-      unit: 'PCS',
-      unitPrice: 140,
-      taxRate: 18,
-      hsnCode: '853650',
-      total: 12 * 140 * 1.18,
-    },
-  ]);
+  const [customerName, setCustomerName] = useState<string>('');
+  const [customerGstin, setCustomerGstin] = useState<string>('');
+  const [parsedItems, setParsedItems] = useState<ParsedItem[]>([]);
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // Pulse animation for recording state
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -92,22 +78,37 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
     };
   }, [recordingState, pulseAnim]);
 
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach(clearTimeout);
+      timersRef.current = [];
+    };
+  }, []);
+
+  const later = (fn: () => void, ms: number) => {
+    const id = setTimeout(fn, ms);
+    timersRef.current.push(id);
+    return id;
+  };
+
   const handleToggleRecord = () => {
     if (recordingState === 'IDLE' || recordingState === 'PARSED') {
+      timersRef.current.forEach(clearTimeout);
+      timersRef.current = [];
       setRecordingState('LISTENING');
       setTranscript('Listening... Speak your bill items clearly.');
 
       // Simulate live recognition delay
-      setTimeout(() => {
+      later(() => {
         setTranscript(
           'Add 10 cans Berger Interior Emulsion at 920 each and 4 boxes dry screws at 150'
         );
       }, 2200);
 
       // Simulate automatic processing after 4.5 seconds
-      setTimeout(() => {
+      later(() => {
         setRecordingState('PROCESSING');
-        setTimeout(() => {
+        later(() => {
           // Append mock parsed results
           const newItems: ParsedItem[] = [
             ...parsedItems,
@@ -138,7 +139,7 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
       }, 4500);
     } else if (recordingState === 'LISTENING') {
       setRecordingState('PROCESSING');
-      setTimeout(() => {
+      later(() => {
         setRecordingState('PARSED');
       }, 1000);
     }
@@ -174,20 +175,21 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
     setParsedItems((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const calculateSubtotal = () =>
-    parsedItems.reduce((acc, it) => acc + it.quantity * it.unitPrice, 0);
-
-  const calculateTax = () =>
-    parsedItems.reduce(
-      (acc, it) => acc + it.quantity * it.unitPrice * (it.taxRate / 100),
-      0
-    );
-
-  const calculateGrandTotal = () => calculateSubtotal() + calculateTax();
+  const buyerStateCode =
+    stateCodeFromGstin(customerGstin) || normalizeStateCode(sellerStateCode) || CONFIG.DEFAULT_STATE_CODE;
+  const gstSummary = calculateInvoiceTotals(
+    parsedItems.map((it) => ({
+      unitPrice: it.unitPrice,
+      quantity: it.quantity,
+      taxRate: it.taxRate,
+    })),
+    sellerStateCode,
+    buyerStateCode
+  );
 
   const handleProceedToInvoice = () => {
     if (parsedItems.length === 0) {
-      Alert.alert('Empty Bill', 'Please speak or add at least one item before continuing.');
+      Alert.alert(t('voiceBilling.empty'));
       return;
     }
 
@@ -196,13 +198,18 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
         initialCustomer: {
           name: customerName,
           gstin: customerGstin,
+          stateCode: buyerStateCode,
         },
         initialItems: parsedItems,
+        inputMode: 'voice',
       });
     } else {
       Alert.alert(
-        'Voice Draft Ready',
-        `Invoice parsed with ${parsedItems.length} items totaling ₹${calculateGrandTotal().toFixed(2)}. Proceeding to final invoice form.`
+        t('voiceBilling.title'),
+        t('invoiceCreate.createdBody', {
+          number: '—',
+          amount: formatINR(gstSummary.summary.grandTotal),
+        })
       );
     }
   };
@@ -212,13 +219,13 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
       {/* Header Bar */}
       <View style={styles.topBar}>
         <View>
-          <Text style={styles.screenTitle}>AI Voice Billing</Text>
+          <Text style={styles.screenTitle}>{t('voiceBilling.title')}</Text>
           <Text style={styles.screenSub}>
             Speak in Hindi, English, or Hinglish to parse line items
           </Text>
         </View>
         <View style={styles.sellerBadge}>
-          <Text style={styles.sellerState}>State: {business?.stateCode || '27'}</Text>
+          <Text style={styles.sellerState}>State: {sellerStateCode}</Text>
         </View>
       </View>
 
@@ -418,16 +425,16 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
           <Text style={styles.sectionTitle}>Summary Preview</Text>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Taxable Amount</Text>
-            <Text style={styles.summaryVal}>₹{calculateSubtotal().toFixed(2)}</Text>
+            <Text style={styles.summaryVal}>{formatINR(gstSummary.summary.totalTaxableAmount)}</Text>
           </View>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Estimated GST</Text>
-            <Text style={styles.summaryVal}>₹{calculateTax().toFixed(2)}</Text>
+            <Text style={styles.summaryVal}>{formatINR(gstSummary.summary.totalTaxAmount)}</Text>
           </View>
           <View style={[styles.summaryRow, styles.grandTotalRow]}>
             <Text style={styles.grandTotalLabel}>Grand Total</Text>
             <Text style={styles.grandTotalVal}>
-              ₹{calculateGrandTotal().toFixed(2)}
+              {formatINR(gstSummary.summary.grandTotal)}
             </Text>
           </View>
         </View>
@@ -440,9 +447,7 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
           onPress={handleProceedToInvoice}
           activeOpacity={0.85}
         >
-          <Text style={styles.confirmBtnText}>
-            Confirm & Open in Invoice Editor →
-          </Text>
+          <Text style={styles.confirmBtnText}>{t('voiceBilling.proceed')}</Text>
         </TouchableOpacity>
       </View>
     </View>

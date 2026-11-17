@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { getDb } from '../db/schema';
+import { useAppStore } from '../store/useAppStore';
 
 export interface ActiveBusiness {
   id: string;
@@ -14,12 +15,7 @@ export type AsyncState<T> =
   | { status: 'empty' }
   | { status: 'ready'; data: T; business: ActiveBusiness };
 
-/**
- * TODO (integration): the active business should come from Member 3's
- * Zustand store (session / active business). Until that exists, use the
- * first business stored on this device.
- */
-async function loadActiveBusiness(db: SQLiteDatabase): Promise<ActiveBusiness | null> {
+async function loadFallbackBusiness(db: SQLiteDatabase): Promise<ActiveBusiness | null> {
   const row = await db.getFirstAsync<{ id: string; business_name: string; gstin: string | null }>(
     'SELECT id, business_name, gstin FROM businesses ORDER BY created_at LIMIT 1'
   );
@@ -27,13 +23,15 @@ async function loadActiveBusiness(db: SQLiteDatabase): Promise<ActiveBusiness | 
 }
 
 /**
- * Loads report data from local SQLite. Always queries fresh (nothing is
- * cached), and keeps showing the previous numbers while a new period loads.
+ * Loads report data from local SQLite for the active business in the Zustand store.
+ * Always queries fresh (nothing is cached), and keeps showing the previous numbers
+ * while a new period loads.
  */
 export function useReport<T>(
   loader: (db: SQLiteDatabase, business: ActiveBusiness) => Promise<T>,
   deps: ReadonlyArray<unknown>
 ): { state: AsyncState<T>; reload: () => void } {
+  const storeBusiness = useAppStore((s) => s.business);
   const [state, setState] = useState<AsyncState<T>>({ status: 'loading' });
   const [tick, setTick] = useState(0);
   const loaderRef = useRef(loader);
@@ -46,7 +44,9 @@ export function useReport<T>(
     (async () => {
       try {
         const db = await getDb();
-        const business = await loadActiveBusiness(db);
+        const business: ActiveBusiness | null = storeBusiness
+          ? { id: storeBusiness.id, name: storeBusiness.name, gstin: storeBusiness.gstin ?? null }
+          : await loadFallbackBusiness(db);
         if (!business) {
           if (!cancelled) setState({ status: 'empty' });
           return;
@@ -62,7 +62,7 @@ export function useReport<T>(
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick, ...deps]);
+  }, [tick, storeBusiness?.id, ...deps]);
 
   return { state, reload: () => setTick((n) => n + 1) };
 }

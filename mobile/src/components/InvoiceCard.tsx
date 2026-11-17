@@ -6,8 +6,11 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
+import { formatINR, formatDate } from '../lib/format';
 
-export type InvoiceStatus = 'PAID' | 'PENDING' | 'CANCELLED' | 'OVERDUE';
+export type InvoiceStatus = 'PAID' | 'UNPAID' | 'PARTIAL' | 'CANCELLED' | 'OVERDUE';
+/** @deprecated Use UNPAID. Kept so older call sites type-check during the transition. */
+export type LegacyInvoiceStatus = InvoiceStatus | 'PENDING';
 
 export interface InvoiceCardData {
   id: string;
@@ -40,11 +43,17 @@ const STATUS_CONFIG: Record<
     textColor: '#2E7D32',
     borderColor: '#A5D6A7',
   },
-  PENDING: {
-    label: 'PENDING',
+  UNPAID: {
+    label: 'UNPAID',
     badgeBg: '#FFF8E1',
     textColor: '#F57F17',
     borderColor: '#FFE082',
+  },
+  PARTIAL: {
+    label: 'PARTIAL',
+    badgeBg: '#E3F2FD',
+    textColor: '#1565C0',
+    borderColor: '#90CAF9',
   },
   OVERDUE: {
     label: 'OVERDUE',
@@ -60,27 +69,7 @@ const STATUS_CONFIG: Record<
   },
 };
 
-export const formatINR = (amount: number): string => {
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 2,
-  }).format(amount);
-};
-
-export const formatDate = (dateStr: string): string => {
-  try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    return d.toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
-  } catch {
-    return dateStr;
-  }
-};
+export { formatINR, formatDate };
 
 export const InvoiceCard: React.FC<InvoiceCardProps> = ({
   invoice,
@@ -89,7 +78,7 @@ export const InvoiceCard: React.FC<InvoiceCardProps> = ({
   onShare,
   containerStyle,
 }) => {
-  const statusMeta = STATUS_CONFIG[invoice.status] || STATUS_CONFIG.PENDING;
+  const statusMeta = STATUS_CONFIG[invoice.status] || STATUS_CONFIG.UNPAID;
 
   return (
     <TouchableOpacity

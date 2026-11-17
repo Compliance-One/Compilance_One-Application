@@ -35,7 +35,7 @@ export async function getDashboardSummary(
             COALESCE(SUM(sgst_amount), 0) AS sgst,
             COALESCE(SUM(igst_amount), 0) AS igst
      FROM invoices
-     WHERE business_id = ? AND invoice_date BETWEEN ? AND ?`,
+     WHERE business_id = ? AND invoice_date BETWEEN ? AND ? AND UPPER(payment_status) != 'CANCELLED'`,
     [businessId, fromDate, toDate]
   );
 

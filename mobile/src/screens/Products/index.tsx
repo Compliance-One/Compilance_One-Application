@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,6 +10,12 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { useTranslation } from 'react-i18next';
+import { useAppStore } from '../../store/useAppStore';
+import { getDb } from '../../db/schema';
+import { deleteProduct, listProducts, upsertProduct } from '../../db/repositories';
+import { newId } from '../../lib/id';
 
 export interface Product {
   id: string;
@@ -25,80 +31,27 @@ export interface Product {
   minStockLevel: number;
 }
 
-const INITIAL_PRODUCTS: Product[] = [
-  {
-    id: 'prod_1',
-    name: 'Industrial Ball Valve 2 Inch Brass',
-    sku: 'VLV-BRS-02',
-    hsnCode: '84818030',
-    category: 'Plumbing',
-    unit: 'PCS',
-    sellingPrice: 1250,
-    purchasePrice: 950,
-    taxRate: 18,
-    currentStock: 45,
-    minStockLevel: 10,
-  },
-  {
-    id: 'prod_2',
-    name: 'UltraTech Super Cement (50kg Bag)',
-    sku: 'CMT-ULT-50',
-    hsnCode: '25232900',
-    category: 'Building Materials',
-    unit: 'BAG',
-    sellingPrice: 380,
-    purchasePrice: 330,
-    taxRate: 28,
-    currentStock: 120,
-    minStockLevel: 30,
-  },
-  {
-    id: 'prod_3',
-    name: 'Havells Modular Switch 10A 1-Way',
-    sku: 'SW-HAV-10A',
-    hsnCode: '85365020',
-    category: 'Electricals',
-    unit: 'PCS',
-    sellingPrice: 140,
-    purchasePrice: 95,
-    taxRate: 18,
-    currentStock: 8,
-    minStockLevel: 25, // Low stock!
-  },
-  {
-    id: 'prod_4',
-    name: 'Asian Paints Apex Ultima White 20L',
-    sku: 'PNT-APX-20L',
-    hsnCode: '32091000',
-    category: 'Paints',
-    unit: 'CAN',
-    sellingPrice: 4200,
-    purchasePrice: 3450,
-    taxRate: 18,
-    currentStock: 0,
-    minStockLevel: 5, // Out of stock!
-  },
-  {
-    id: 'prod_5',
-    name: 'High Tensile Hex Bolt M12 x 50mm',
-    sku: 'BLT-HT-1250',
-    hsnCode: '73181500',
-    category: 'Hardware',
-    unit: 'BOX',
-    sellingPrice: 480,
-    purchasePrice: 360,
-    taxRate: 18,
-    currentStock: 64,
-    minStockLevel: 15,
-  },
-];
 
 const CATEGORIES = ['All', 'Plumbing', 'Electricals', 'Hardware', 'Paints', 'Building Materials'];
 const TAX_RATES = [0, 5, 12, 18, 28];
 const UNITS = ['PCS', 'BAG', 'CAN', 'BOX', 'KG', 'MTR', 'LTR'];
 
 export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
-  const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
+  const { t } = useTranslation();
+  const businessId = useAppStore((s) => s.business?.id);
+  const [products, setProducts] = useState<Product[]>([]);
+
+  const reload = useCallback(async () => {
+    if (!businessId) return;
+    const db = await getDb();
+    setProducts(await listProducts(db, businessId));
+  }, [businessId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void reload();
+    }, [reload])
+  );
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
@@ -134,7 +87,7 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
 
   const handleOpenAddModal = () => {
     setFormData({
-      id: `prod_${Date.now()}`,
+      id: newId(),
       name: '',
       sku: `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
       hsnCode: '',
@@ -164,15 +117,19 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
       return;
     }
 
+    if (!businessId) return;
     const existingIndex = products.findIndex((p) => p.id === formData.id);
-    if (existingIndex >= 0) {
-      const updated = [...products];
-      updated[existingIndex] = formData;
-      setProducts(updated);
-    } else {
-      setProducts([formData, ...products]);
-    }
-    setIsModalVisible(false);
+    const isNew = existingIndex < 0;
+    void (async () => {
+      try {
+        const db = await getDb();
+        await upsertProduct(db, businessId, formData, isNew);
+        await reload();
+        setIsModalVisible(false);
+      } catch (e) {
+        Alert.alert('Error', e instanceof Error ? e.message : String(e));
+      }
+    })();
   };
 
   const handleDeleteProduct = (id: string, name: string) => {
@@ -185,7 +142,16 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
           text: 'Delete',
           style: 'destructive',
           onPress: () => {
-            setProducts((prev) => prev.filter((p) => p.id !== id));
+            if (!businessId) return;
+            void (async () => {
+              try {
+                const db = await getDb();
+                await deleteProduct(db, businessId, id);
+                await reload();
+              } catch (e) {
+                Alert.alert('Error', e instanceof Error ? e.message : String(e));
+              }
+            })();
           },
         },
       ]
@@ -207,7 +173,7 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Product Catalog</Text>
+          <Text style={styles.title}>{t('products.title')}</Text>
           <Text style={styles.subTitle}>Master Items, HSN & GST Rates</Text>
         </View>
         <TouchableOpacity style={styles.addBtn} onPress={handleOpenAddModal}>
