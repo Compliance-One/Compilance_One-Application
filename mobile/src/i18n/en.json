@@ -156,7 +156,9 @@
     "warnB2bMissing": "Business bills missing a customer GSTIN: {{n}}. Add it before filing.",
     "warnNoBills": "No bills in this month.",
     "exportExcel": "Export as Excel",
-    "generatedSuccess": "GSTR-1 JSON generated successfully"
+    "generatedSuccess": "GSTR-1 JSON generated successfully",
+    "downloadJson": "⬇ Download GST JSON",
+    "generateOfficial": "Official GSTN offline format (draft)"
   },
   "settings": {
     "title": "Settings",

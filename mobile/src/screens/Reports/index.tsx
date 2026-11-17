@@ -99,6 +99,7 @@ export default function ReportsScreen({ navigate }: ScreenProps) {
       <Card style={{ padding: 0, overflow: 'hidden' }}>
         <NavRow title={t('profitLoss.title')} hint={t('dashboard.plHint')} onPress={() => navigate('profitLoss')} />
         <NavRow title={t('balanceSheet.title')} hint={t('dashboard.bsHint')} onPress={() => navigate('balanceSheet')} />
+        <NavRow title={t('gstr1Export.downloadJson')} hint={t('gstr1Export.title')} onPress={() => navigate('gstr1')} />
       </Card>
       </View>
     </ScrollView>

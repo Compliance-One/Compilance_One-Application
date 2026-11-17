@@ -21,6 +21,7 @@ import { useReport } from '../../hooks/useReport';
 import type { ActiveBusiness } from '../../hooks/useReport';
 import { getGstr1Preview } from '../../gstr1/preview';
 import { generateGstr1Json } from '../../gstr1/generateGstr1';
+import { generateSimpleGstr1 } from '../../gstr1/simpleGstr1';
 import { recordGstr1Export } from '../../db/repositories';
 import {
   Banner,
@@ -47,8 +48,8 @@ export default function Gstr1ExportScreen(_props: ScreenProps) {
   const { t } = useTranslation();
   const months = t('months', { returnObjects: true }) as unknown as string[];
 
-  // GSTR-1 is filed for the month that just ended, so start there.
-  const [ref, setRef] = useState<MonthRef>(() => shiftMonth(thisMonthRef(), -1));
+  // Default to this month; step back for the month that just ended.
+  const [ref, setRef] = useState<MonthRef>(() => thisMonthRef());
   const [file, setFile] = useState<GeneratedFile | null>(null);
   const [busy, setBusy] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
@@ -65,6 +66,39 @@ export default function Gstr1ExportScreen(_props: ScreenProps) {
     setFile(null);
     setGenError(null);
     setRef((r) => shiftMonth(r, delta));
+  }
+
+  /** GST JSON in the simple summary shape (works even before a GSTIN is added). */
+  async function generateSimple(business: ActiveBusiness) {
+    setBusy(true);
+    setGenError(null);
+    try {
+      const db = await getDb();
+      const result = await generateSimpleGstr1(db, business.id, business.gstin ?? '', range.from, range.to);
+      const fileName = `GST_${business.gstin || 'NOGSTIN'}_${range.from}_${range.to}.json`;
+      const json = JSON.stringify(result, null, 2);
+      const dir = FileSystem.documentDirectory;
+      if (!dir) throw new Error('No document directory available on this device');
+      const path = `${dir}${fileName}`;
+      await FileSystem.writeAsStringAsync(path, json, { encoding: FileSystem.EncodingType.UTF8 });
+      await recordGstr1Export(db, {
+        businessId: business.id,
+        periodFrom: range.from,
+        periodTo: range.to,
+        totalInvoices: result.total_invoices,
+        totalB2b: result.total_b2b,
+        totalB2c: result.total_b2c,
+        jsonFilePath: path,
+        status: 'generated',
+      });
+      const ready = { fileName, json, path, total: result.total_invoices, b2b: result.total_b2b, b2c: result.total_b2c };
+      setFile(ready);
+      await shareFile(ready);
+    } catch (e) {
+      setGenError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function generate(business: ActiveBusiness) {
@@ -106,12 +140,15 @@ export default function Gstr1ExportScreen(_props: ScreenProps) {
   }
 
   async function share() {
-    if (!file) return;
+    if (file) await shareFile(file);
+  }
+
+  async function shareFile(f: GeneratedFile) {
     try {
-      if (file.path && (await Sharing.isAvailableAsync())) {
-        await Sharing.shareAsync(file.path, {
+      if (f.path && (await Sharing.isAvailableAsync())) {
+        await Sharing.shareAsync(f.path, {
           mimeType: 'application/json',
-          dialogTitle: file.fileName,
+          dialogTitle: f.fileName,
           UTI: 'public.json',
         });
       }
@@ -156,10 +193,14 @@ export default function Gstr1ExportScreen(_props: ScreenProps) {
               {genError ? <Banner tone="warn" text={genError} /> : null}
 
               <PrimaryButton
-                label={busy ? t('gstr1Export.generating') : t('gstr1Export.generate')}
-                onPress={() => generate(business)}
-                disabled={noBills || noGstin}
+                label={busy ? t('gstr1Export.generating') : t('gstr1Export.downloadJson')}
+                onPress={() => generateSimple(business)}
+                disabled={noBills}
                 busy={busy}
+              />
+              <SecondaryButton
+                label={t('gstr1Export.generateOfficial')}
+                onPress={() => (noBills || noGstin || busy ? undefined : generate(business))}
               />
 
               {file ? (
