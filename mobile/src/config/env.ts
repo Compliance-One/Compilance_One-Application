@@ -9,6 +9,7 @@ const getDevApiBaseUrl = (): string => {
 
 export const CONFIG = {
   API_BASE_URL: process.env.EXPO_PUBLIC_API_URL || getDevApiBaseUrl(),
-  SYNC_POLL_INTERVAL_MS: 30000,
+  SYNC_POLL_INTERVAL_MS: 30_000,
   MAX_RETRY_COUNT: 5,
+  DEFAULT_STATE_CODE: '33',
 };
