@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CONFIG } from '../config/env';
 import i18n from '../i18n';
+import { bestTranscript, freshFinal } from './speechResults';
 
 /** Friendly, translated text for a recogniser error code. */
 export function friendlySpeechError(code: string | undefined): string {
@@ -43,6 +44,15 @@ const MOCK_PHRASES = [
 export function useSpeechToText(lang: SpeechLocale) {
   const [state, setState] = useState<ListenState>('idle');
   const [transcript, setTranscript] = useState('');
+  /** Each newly committed final phrase, once. Consumers act when `id` changes. */
+  const [committed, setCommitted] = useState<{ id: number; text: string }>({ id: 0, text: '' });
+  const lastCommitted = useRef('');
+  const commit = (text: string) => {
+    const fresh = freshFinal(lastCommitted.current, text);
+    if (!fresh) return;
+    lastCommitted.current = text;
+    setCommitted((c) => ({ id: c.id + 1, text: fresh }));
+  };
   const [partial, setPartial] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [onDevice, setOnDevice] = useState(false);
@@ -91,6 +101,7 @@ export function useSpeechToText(lang: SpeechLocale) {
         timers.current.push(
           setTimeout(() => {
             setTranscript(phrase);
+            commit(phrase);
             setPartial('');
             setState('idle');
           }, 200)
@@ -121,11 +132,12 @@ export function useSpeechToText(lang: SpeechLocale) {
         setPartial('');
       }),
       speech.ExpoSpeechRecognitionModule.addListener('result', (event: { results?: Array<{ transcript?: string }>; isFinal?: boolean }) => {
-        const text = (event.results ?? []).map((r) => r.transcript ?? '').join(' ').trim();
+        const text = bestTranscript(event.results);
         if (!text) return;
         if (event.isFinal) {
           setTranscript(text);
           setPartial('');
+          commit(text);
         } else {
           setPartial(text);
         }
@@ -164,13 +176,15 @@ export function useSpeechToText(lang: SpeechLocale) {
     ExpoSpeechRecognitionModule.start({
       lang,
       interimResults: true,
-      continuous: true,
+      // One phrase per tap: interim + continuous mode repeated words on some phones.
+      continuous: false,
       requiresOnDeviceRecognition: supportsOnDevice,
     });
     setState('listening');
   }, [lang]);
 
   const start = useCallback(async () => {
+    lastCommitted.current = '';
     setError(null);
     setTranscript('');
     setPartial('');
@@ -230,6 +244,7 @@ export function useSpeechToText(lang: SpeechLocale) {
   return {
     state,
     transcript,
+    committed,
     partial,
     display,
     error,

@@ -69,7 +69,6 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
   const [typed, setTyped] = useState('');
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
-  const lastApplied = useRef('');
 
   useFocusEffect(
     useCallback(() => {
@@ -95,16 +94,14 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
     [products, customers, customerName]
   );
 
-  // Each final phrase from the recogniser is appended once.
+  // Each committed final phrase is parsed and appended exactly once.
+  const lastId = useRef(0);
   useEffect(() => {
-    const text = speech.transcript.trim();
-    if (!text || text === lastApplied.current) return;
-    // Some recognisers repeat earlier words in the next final result; only add the new part.
-    const prev = lastApplied.current;
-    const fresh = prev && text.startsWith(prev) ? text.slice(prev.length) : text;
-    lastApplied.current = text;
-    addFromText(fresh);
-  }, [speech.transcript, addFromText]);
+    if (speech.committed.id === 0 || speech.committed.id === lastId.current) return;
+    lastId.current = speech.committed.id;
+    addFromText(speech.committed.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [speech.committed.id]);
 
   const update = (id: string, patch: Partial<ParsedItem>) =>
     setItems((prev) =>
@@ -168,7 +165,6 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
       setItems([]);
       setCustomerName('');
       setTyped('');
-      lastApplied.current = '';
       Alert.alert(t('invoiceCreate.created'), t('invoiceCreate.createdBody', { number, amount: formatINR(total) }), [
         { text: t('invoiceCreate.print'), onPress: () => void printInvoiceById(id).catch((e) => alertActionError(e, 'Print')) },
         { text: t('invoiceCreate.sharePdf'), onPress: () => void shareInvoicePdfById(id).catch((e) => alertActionError(e, 'PDF')) },
