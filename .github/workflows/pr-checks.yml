@@ -75,5 +75,8 @@ jobs:
       - name: ESLint Check (Optional - if configured)
         run: |
           cd mobile
-          # Will run safely and pass if eslint isn't strictly enforced yet
-          npm run lint --if-present
+          if [ -f eslint.config.js ] || [ -f .eslintrc ] || [ -f .eslintrc.js ] || [ -f .eslintrc.json ]; then
+            npm run lint
+          else
+            echo "ESLint is not configured; skipping lint."
+          fi

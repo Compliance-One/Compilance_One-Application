@@ -9,7 +9,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "lint": "expo lint --if-present",
+    "lint": "expo lint",
     "test": "jest",
     "start:go": "expo start"
   },
