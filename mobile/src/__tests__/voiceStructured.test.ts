@@ -80,3 +80,19 @@ describe('hardware catalogue matching', () => {
     expect(first('2 mangoes 50').productId).toBeUndefined();
   });
 });
+
+describe('no false matches against a large catalogue', () => {
+  const { HARDWARE_CATALOG } = require('../data/hardwareCatalog');
+  const products = HARDWARE_CATALOG.map((p: any, i: number) => ({ id: `p${i}`, name: p.name, unit: p.unit, sellingPrice: p.price, taxRate: p.gst, aliases: p.aliases }));
+  const first = (text: string) => parseTranscript(text, { products }).items[0];
+  it('leaves kirana words unmatched (so they become new items)', () => {
+    for (const w of ['1 kilo arisi 60 rupees', '1 sugar 45', '2 milk 25', '1 soap 40']) {
+      expect([w, first(w).name, first(w).productId]).toEqual([w, first(w).name, undefined]);
+    }
+  });
+  it('tolerates small spelling slips', () => {
+    expect(first('1 hamer').name).toMatch(/Hammer/);
+    expect(first('1 cemnt').name).toMatch(/Cement/);
+    expect(first('1 padlok').name).toMatch(/Padlock/);
+  });
+});

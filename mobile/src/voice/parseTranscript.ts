@@ -478,6 +478,27 @@ export function singular(tok: string): string {
   return tok;
 }
 
+/** Levenshtein distance, capped early for speed. */
+function editDistance(a: string, b: string): number {
+  if (Math.abs(a.length - b.length) > 2) return 3;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** A small spelling slip ("hamer", "cemnt"): same first letter, 1 edit (2 for long words). */
+function nearWord(tok: string, h: string): boolean {
+  if (tok.length < 4 || h.length < 4 || tok[0] !== h[0]) return false;
+  const allowed = Math.min(tok.length, h.length) >= 7 ? 2 : 1;
+  return editDistance(tok, h) <= allowed;
+}
+
 function tokensOf(s: string): string[] {
   return normalizeName(s).split(/\s+/).filter((t) => t.length > 1).map(singular);
 }
@@ -487,7 +508,7 @@ function tokensOf(s: string): string[] {
  * a prefix of 3+ letters counts 0.8. A tiny bonus for covering more of the
  * candidate breaks ties ("tap" prefers "Water Tap" over "Teflon Tape").
  */
-export function tokenOverlap(query: string, candidate: string): number {
+export function tokenOverlap(query: string, candidate: string, fuzzy = true): number {
   const tokens = tokensOf(query);
   if (tokens.length === 0) return 0;
   const hayTokens = tokensOf(candidate);
@@ -500,6 +521,8 @@ export function tokenOverlap(query: string, candidate: string): number {
       covered += 1;
     } else if (tok.length >= 3 && hayTokens.some((h) => h.length >= 3 && (h.startsWith(tok) || tok.startsWith(h)))) {
       hits += 0.8;
+    } else if (fuzzy && hayTokens.some((h) => nearWord(tok, h))) {
+      hits += 0.7;
     }
   }
   return hits / tokens.length + (covered / hayTokens.length) * 0.01;
@@ -508,7 +531,8 @@ export function tokenOverlap(query: string, candidate: string): number {
 function productScore(name: string, product: CatalogProduct): number {
   let best = tokenOverlap(name, product.name);
   if (product.sku) best = Math.max(best, tokenOverlap(name, product.sku));
-  for (const a of product.aliases ?? []) best = Math.max(best, tokenOverlap(name, a) - 0.005);
+  // Aliases are transliterations; spelling tolerance on them causes false hits ("sugar" ~ "suvar").
+  for (const a of product.aliases ?? []) best = Math.max(best, tokenOverlap(name, a, false) - 0.005);
   return best;
 }
 
@@ -571,17 +595,9 @@ function matchProductOne(name: string, products: CatalogProduct[]): CatalogProdu
     const score = productScore(name, product);
     if (!bestOverlap || score > bestOverlap.score) bestOverlap = { product, score };
   }
+  // Whole-string fuzzy search (fuse.js) was dropped for products: with a big catalogue it
+  // matched unrelated items ("rice" -> "Screwdriver"). Word-level spelling tolerance above is enough.
   if (bestOverlap && bestOverlap.score >= 0.6) return bestOverlap.product;
-
-  const fuse = new Fuse(products, {
-    keys: ['name', 'sku', 'aliases'],
-    threshold: 0.35,
-    includeScore: true,
-    ignoreLocation: true,
-  });
-  const hits = fuse.search(name);
-  const best = hits[0];
-  if (best && (best.score ?? 1) <= 0.35) return best.item;
   return undefined;
 }
 
