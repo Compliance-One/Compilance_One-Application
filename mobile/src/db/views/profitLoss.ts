@@ -24,7 +24,7 @@ export async function getProfitAndLoss(
   const incomeRows = await db.getAllAsync<{ category: string; total: number }>(
     `SELECT 'sales' AS category, SUM(taxable_amount) AS total
      FROM invoices
-     WHERE business_id = ? AND invoice_date BETWEEN ? AND ?
+     WHERE business_id = ? AND invoice_date BETWEEN ? AND ? AND UPPER(payment_status) != 'CANCELLED'
      GROUP BY category`,
     [businessId, fromDate, toDate]
   );
