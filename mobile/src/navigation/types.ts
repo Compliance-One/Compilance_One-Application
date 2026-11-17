@@ -29,6 +29,7 @@ export type RootStackParamList = {
   InvoiceCreate: InvoiceCreateParams | undefined;
   Customers: undefined;
   Inventory: undefined;
+  MonthSummary: undefined;
   Ledger: undefined;
   ProfitLoss: undefined;
   BalanceSheet: undefined;

@@ -9,6 +9,7 @@ import { useScreenNav } from './useScreenNav';
 import { colors } from '../theme';
 
 import DashboardScreen from '../screens/Dashboard';
+import HomeScreen from '../screens/Home';
 import ReportsScreen from '../screens/Reports';
 import LedgerScreen from '../screens/Ledger';
 import Gstr1ExportScreen from '../screens/GSTR1Export';
@@ -47,7 +48,7 @@ function TabLabel({ label, focused }: { label: string; focused: boolean }) {
       adjustsFontSizeToFit
       minimumFontScale={0.8}
       style={{
-        fontSize: 11,
+        fontSize: 13,
         fontWeight: focused ? '800' : '600',
         color: focused ? colors.leaf : colors.inkSoft,
       }}
@@ -57,20 +58,31 @@ function TabLabel({ label, focused }: { label: string; focused: boolean }) {
   );
 }
 
+const TAB_ICONS: Record<string, string> = {
+  Dashboard: '🏠',
+  Invoices: '🧾',
+  Products: '📦',
+  Reports: '📊',
+  Settings: '⚙️',
+};
+
 function MainTabs() {
   const { t } = useTranslation();
   return (
     <Tabs.Navigator
-      screenOptions={{
+      screenOptions={({ route }) => ({
         headerShown: false,
         tabBarActiveTintColor: colors.leaf,
         tabBarInactiveTintColor: colors.inkSoft,
-        tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.line },
-      }}
+        tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.line, minHeight: 64 },
+        tabBarIcon: ({ focused }) => (
+          <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.6 }}>{TAB_ICONS[route.name] ?? '•'}</Text>
+        ),
+      })}
     >
       <Tabs.Screen
         name="Dashboard"
-        component={Dashboard}
+        component={HomeScreen}
         options={{ tabBarLabel: ({ focused }) => <TabLabel label={t('tabs.home')} focused={focused} /> }}
       />
       <Tabs.Screen
@@ -115,6 +127,7 @@ export default function RootNavigator() {
         />
         <Stack.Screen name="Customers" component={CustomersScreen} options={{ title: t('customers.title') }} />
         <Stack.Screen name="Inventory" component={InventoryScreen} options={{ title: t('inventory.title') }} />
+        <Stack.Screen name="MonthSummary" component={Dashboard} options={{ title: t('dashboard.monthTitle') }} />
         <Stack.Screen name="Ledger" component={Ledger} options={{ title: t('ledger.title') }} />
         <Stack.Screen name="ProfitLoss" component={ProfitLoss} options={{ title: t('profitLoss.title') }} />
         <Stack.Screen name="BalanceSheet" component={BalanceSheet} options={{ title: t('balanceSheet.title') }} />
