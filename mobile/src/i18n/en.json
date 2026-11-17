@@ -218,7 +218,15 @@
     "unit": "Unit",
     "rate": "Rate ₹",
     "amount": "Amount",
-    "fromItems": "from saved items"
+    "fromItems": "from saved items",
+    "customerPhone": "Phone (optional)",
+    "customerGstin": "GSTIN (optional, for GST bill)",
+    "clearCustomer": "Clear",
+    "gstinBadTitle": "Check the GSTIN",
+    "gstinBad": "GSTIN should be 15 letters/numbers, like 33ABCDE1234F1Z5. Leave it empty for a normal bill.",
+    "gstinNeedsName": "Please enter the customer name for a GST bill.",
+    "b2bNote": "GST bill (B2B) · {{state}}",
+    "newItemsAdded": "{{count}} new item(s) added to your Items list."
   },
   "invoiceCreate": {
     "title": "New Tax Invoice",

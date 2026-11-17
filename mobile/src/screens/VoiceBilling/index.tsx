@@ -13,7 +13,8 @@ import { getDb } from '../../db/schema';
 import { createInvoice, listCustomers, listProducts, nextInvoiceNumber } from '../../db/repositories';
 import { formatINR } from '../../lib/format';
 import { localISODate } from '../../lib/dates';
-import { calculateInvoiceTotals, normalizeStateCode } from '../../lib/gst';
+import { calculateInvoiceTotals, isValidGstin, normalizeStateCode, stateCodeFromGstin, stateNameFor } from '../../lib/gst';
+import { SEED_ALIASES } from '../../data/hardwareCatalog';
 import { numberToInput, parseDecimal, sanitizeDecimalInput } from '../../lib/numberInput';
 import { alertActionError, printInvoiceById, shareInvoicePdfById } from '../../billing/invoiceActions';
 import { parseTranscript, type CatalogCustomer, type CatalogProduct, type ParsedVoiceItem } from '../../voice/parseTranscript';
@@ -63,6 +64,9 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
   const speech = useSpeechToText(lang);
 
   const [customerName, setCustomerName] = useState('');
+  const [custPhone, setCustPhone] = useState('');
+  const [custGstin, setCustGstin] = useState('');
+  const [picked, setPicked] = useState<CatalogCustomer | null>(null);
   const [items, setItems] = useState<ParsedItem[]>([]);
   const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [customers, setCustomers] = useState<CatalogCustomer[]>([]);
@@ -76,7 +80,8 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
       void (async () => {
         const db = await getDb();
         const [prods, custs] = await Promise.all([listProducts(db, business.id), listCustomers(db, business.id)]);
-        setProducts(prods);
+        // Seeded items carry Tamil/Tanglish names so "aani" finds "Wire Nails".
+        setProducts(prods.map((p) => ({ ...p, aliases: SEED_ALIASES[p.name.toLowerCase()] })));
         setCustomers(custs);
       })();
     }, [business?.id])
@@ -113,11 +118,35 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
       })
     );
 
+  const gstinClean = custGstin.trim().toUpperCase();
+  const gstinError = gstinClean.length > 0 && !isValidGstin(gstinClean);
+  const buyerStateCode =
+    (gstinClean && !gstinError ? stateCodeFromGstin(gstinClean) : '') ||
+    normalizeStateCode(picked?.stateCode) ||
+    sellerStateCode;
   const totals = calculateInvoiceTotals(
     items.map((it) => ({ unitPrice: it.unitPrice, quantity: it.quantity, taxRate: it.taxRate })),
     sellerStateCode,
-    sellerStateCode
+    buyerStateCode
   ).summary;
+
+  const q = customerName.trim().toLowerCase();
+  const suggestions =
+    q.length >= 1 && !picked
+      ? customers.filter((c) => c.name.toLowerCase().includes(q) || (c.phone ?? '').includes(q)).slice(0, 4)
+      : [];
+  const pickCustomer = (c: CatalogCustomer) => {
+    setPicked(c);
+    setCustomerName(c.name);
+    setCustPhone(c.phone ?? '');
+    setCustGstin(c.gstin ?? '');
+  };
+  const clearCustomer = () => {
+    setPicked(null);
+    setCustomerName('');
+    setCustPhone('');
+    setCustGstin('');
+  };
 
   const listening = speech.state === 'listening' || speech.state === 'requesting';
 
@@ -136,21 +165,39 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
       Alert.alert(t('voiceBilling.priceMissing'));
       return;
     }
+    if (gstinError) {
+      Alert.alert(t('voiceBilling.gstinBadTitle'), t('voiceBilling.gstinBad'));
+      return;
+    }
+    if (gstinClean && !customerName.trim()) {
+      Alert.alert(t('voiceBilling.gstinNeedsName'));
+      return;
+    }
     savingRef.current = true;
     setSaving(true);
     try {
       if (listening) await speech.cancel();
       const db = await getDb();
       const number = await nextInvoiceNumber(db, business.id);
-      const match = customers.find((c) => c.name.toLowerCase() === customerName.trim().toLowerCase());
+      const name = customerName.trim();
+      const match = picked ?? customers.find((c) => c.name.toLowerCase() === name.toLowerCase());
+      const newItems = valid.filter((it) => !it.productId).length;
       const id = await createInvoice(db, {
         businessId: business.id,
         sellerStateCode,
-        buyerStateCode: match?.stateCode || sellerStateCode,
+        buyerStateCode,
         invoiceNumber: number,
         invoiceDate: localISODate(),
         inputMode: 'voice',
-        customer: customerName.trim() ? { id: match?.id, name: customerName.trim(), gstin: match?.gstin || undefined } : null,
+        customer: name
+          ? {
+              id: match?.id,
+              name,
+              phone: custPhone.trim() || undefined,
+              gstin: gstinClean || undefined,
+              stateCode: buyerStateCode,
+            }
+          : null,
         items: valid.map((it) => ({
           name: it.name.trim(),
           hsnCode: it.hsnCode,
@@ -163,9 +210,16 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
       });
       const total = totals.grandTotal;
       setItems([]);
-      setCustomerName('');
+      clearCustomer();
       setTyped('');
-      Alert.alert(t('invoiceCreate.created'), t('invoiceCreate.createdBody', { number, amount: formatINR(total) }), [
+      // Reload so items created from this bill are matched next time.
+      const [prods, custs] = await Promise.all([listProducts(db, business.id), listCustomers(db, business.id)]);
+      setProducts(prods.map((p) => ({ ...p, aliases: SEED_ALIASES[p.name.toLowerCase()] })));
+      setCustomers(custs);
+      const body =
+        t('invoiceCreate.createdBody', { number, amount: formatINR(total) }) +
+        (newItems > 0 ? '\n' + t('voiceBilling.newItemsAdded', { count: newItems }) : '');
+      Alert.alert(t('invoiceCreate.created'), body, [
         { text: t('invoiceCreate.print'), onPress: () => void printInvoiceById(id).catch((e) => alertActionError(e, 'Print')) },
         { text: t('invoiceCreate.sharePdf'), onPress: () => void shareInvoicePdfById(id).catch((e) => alertActionError(e, 'PDF')) },
         { text: t('common.ok', { defaultValue: 'OK' }) },
@@ -249,7 +303,59 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
         <BigButton label="+" compact onPress={() => (addFromText(typed) ? setTyped('') : undefined)} style={{ width: TOUCH + 8 }} />
       </View>
 
-      <TextField label={t('voiceBilling.customerOptional')} value={customerName} onChangeText={setCustomerName} placeholder={t('voiceBilling.walkIn')} />
+      <Panel>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Text style={[font.bodyStrong, { color: ui.text, flex: 1 }]}>👤 {t('voiceBilling.customerOptional')}</Text>
+          {customerName || custPhone || custGstin ? (
+            <Pressable onPress={clearCustomer} hitSlop={10}>
+              <Text style={[font.small, { color: ui.danger }]}>{t('voiceBilling.clearCustomer')}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+        <TextField
+          label={t('voiceBilling.customerName')}
+          value={customerName}
+          onChangeText={(v) => {
+            setCustomerName(v);
+            if (picked && v.trim().toLowerCase() !== picked.name.toLowerCase()) setPicked(null);
+          }}
+          placeholder={t('voiceBilling.walkIn')}
+        />
+        {suggestions.length > 0 ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: sp.sm }}>
+            {suggestions.map((c) => (
+              <Pressable key={c.id} onPress={() => pickCustomer(c)} style={s.chip}>
+                <Text style={[font.small, { color: ui.primary }]}>
+                  {c.name}
+                  {c.gstin ? ' · GST' : c.phone ? ` · ${c.phone}` : ''}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+        <TextField
+          label={t('voiceBilling.customerPhone')}
+          value={custPhone}
+          onChangeText={(v) => setCustPhone(v.replace(/[^0-9+ ]/g, ''))}
+          keyboardType="phone-pad"
+          maxLength={15}
+        />
+        <TextField
+          label={t('voiceBilling.customerGstin')}
+          value={custGstin}
+          onChangeText={(v) => setCustGstin(v.replace(/[^0-9a-zA-Z]/g, '').toUpperCase())}
+          autoCapitalize="characters"
+          maxLength={15}
+          placeholder="33ABCDE1234F1Z5"
+        />
+        {gstinError ? (
+          <Text style={[font.small, { color: ui.danger }]}>{t('voiceBilling.gstinBad')}</Text>
+        ) : gstinClean ? (
+          <Text style={[font.small, { color: ui.good }]}>
+            {t('voiceBilling.b2bNote', { state: stateNameFor(buyerStateCode) })}
+          </Text>
+        ) : null}
+      </Panel>
 
       {items.map((it, idx) => (
         <Panel key={it.id}>
@@ -306,7 +412,14 @@ export const VoiceBillingScreen: React.FC<{ navigation?: any; route?: any }> = (
       {items.length > 0 && totals.totalTaxAmount > 0 ? (
         <Panel>
           <Row label={t('voiceBilling.taxable')} value={formatINR(totals.totalTaxableAmount)} />
-          <Row label={t('voiceBilling.tax')} value={formatINR(totals.totalTaxAmount)} />
+          {totals.isInterState ? (
+            <Row label="IGST" value={formatINR(totals.totalIgstAmount)} />
+          ) : (
+            <>
+              <Row label="CGST" value={formatINR(totals.totalCgstAmount)} />
+              <Row label="SGST" value={formatINR(totals.totalSgstAmount)} />
+            </>
+          )}
         </Panel>
       ) : null}
 

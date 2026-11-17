@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { CONFIG } from '../config/env';
 import { addDays, localISODate } from '../lib/dates';
 import { newId } from '../lib/id';
-import { calculateInvoiceTotals, normalizeStateCode, stateNameFor, type GstLineInput } from '../lib/gst';
+import { calculateInvoiceTotals, normalizeStateCode, stateCodeFromGstin, stateNameFor, type GstLineInput } from '../lib/gst';
 import { OutboxRepository } from '../sync/outbox';
 import { toSyncPayload } from '../sync/syncManager';
 import type { InvoiceDocument } from '../billing/invoiceDocument';
@@ -368,8 +368,37 @@ async function findOrCreateCustomer(
   customer: NonNullable<CreateInvoiceInput['customer']>
 ): Promise<string> {
   if (customer.id) {
-    const existing = await db.getFirstAsync<{ id: string }>(`SELECT id FROM customers WHERE id = ?`, [customer.id]);
-    if (existing) return existing.id;
+    const existing = await db.getFirstAsync<{ id: string; name: string; phone: string | null; address: string | null; gstin: string | null; email: string | null; created_at: string | null }>(
+      `SELECT id, name, phone, address, gstin, email, created_at FROM customers WHERE id = ?`,
+      [customer.id]
+    );
+    if (existing) {
+      // A GSTIN typed on the bill for a picked customer makes them B2B from now on.
+      if (customer.gstin && customer.gstin !== (existing.gstin ?? '')) {
+        const stateCode = normalizeStateCode(customer.stateCode) || stateCodeFromGstin(customer.gstin) || null;
+        const phone = existing.phone || customer.phone || null;
+        await db.runAsync(
+          `UPDATE customers SET gstin = ?, customer_type = 'B2B', state_code = COALESCE(?, state_code), phone = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+          [customer.gstin, stateCode, phone, existing.id]
+        );
+        await outbox.enqueue(
+          'customers',
+          existing.id,
+          'UPDATE',
+          toSyncPayload('customers', {
+            id: existing.id,
+            business_id: businessId,
+            name: existing.name,
+            phone,
+            address: existing.address,
+            gstin: customer.gstin,
+            customer_type: 'B2B',
+            created_at: existing.created_at ?? localISODate(),
+          })
+        );
+      }
+      return existing.id;
+    }
   }
   if (customer.gstin) {
     const byGstin = await db.getFirstAsync<{ id: string }>(
@@ -386,7 +415,7 @@ async function findOrCreateCustomer(
     if (byPhone) return byPhone.id;
   }
   const byName = await db.getFirstAsync<{ id: string }>(
-    `SELECT id FROM customers WHERE business_id = ? AND name = ? AND IFNULL(gstin,'') = IFNULL(?, '')`,
+    `SELECT id FROM customers WHERE business_id = ? AND name = ? COLLATE NOCASE AND IFNULL(gstin,'') = IFNULL(?, '')`,
     [businessId, customer.name, customer.gstin ?? '']
   );
   if (byName) return byName.id;
@@ -434,8 +463,8 @@ async function findOrCreateProduct(
     if (existing) return existing.id;
   }
   const byName = await db.getFirstAsync<{ id: string }>(
-    `SELECT id FROM products WHERE business_id = ? AND name = ?`,
-    [businessId, item.name]
+    `SELECT id FROM products WHERE business_id = ? AND name = ? COLLATE NOCASE`,
+    [businessId, item.name.trim()]
   );
   if (byName) return byName.id;
   const id = newId();

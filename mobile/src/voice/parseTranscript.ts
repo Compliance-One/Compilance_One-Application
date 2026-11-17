@@ -8,6 +8,8 @@ export interface CatalogProduct {
   unit?: string;
   sellingPrice?: number;
   taxRate?: number;
+  /** Extra spoken names (Tamil script / Tanglish), e.g. ["ஆணி","aani"]. */
+  aliases?: string[];
 }
 
 export interface CatalogCustomer {
@@ -467,17 +469,47 @@ function normalizeName(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9஀-௿]+/g, ' ').trim();
 }
 
-/** Fraction of query tokens that appear in the candidate (prefix allowed). */
-function tokenOverlap(query: string, candidate: string): number {
-  const tokens = normalizeName(query).split(/\s+/).filter((t) => t.length > 1);
+/** Singular form for matching: "screws" -> "screw", "boxes" -> "box". */
+export function singular(tok: string): string {
+  if (!/^[a-z]+$/.test(tok) || tok.length <= 3) return tok;
+  if (/(sh|ch|x|z|ss)es$/.test(tok)) return tok.slice(0, -2);
+  if (tok.endsWith('ies') && tok.length > 4) return tok.slice(0, -3) + 'y';
+  if (tok.endsWith('s') && !tok.endsWith('ss')) return tok.slice(0, -1);
+  return tok;
+}
+
+function tokensOf(s: string): string[] {
+  return normalizeName(s).split(/\s+/).filter((t) => t.length > 1).map(singular);
+}
+
+/**
+ * How well the query's words appear in the candidate: an exact word counts 1,
+ * a prefix of 3+ letters counts 0.8. A tiny bonus for covering more of the
+ * candidate breaks ties ("tap" prefers "Water Tap" over "Teflon Tape").
+ */
+export function tokenOverlap(query: string, candidate: string): number {
+  const tokens = tokensOf(query);
   if (tokens.length === 0) return 0;
-  const hay = normalizeName(candidate);
-  const hayTokens = hay.split(/\s+/);
+  const hayTokens = tokensOf(candidate);
+  if (hayTokens.length === 0) return 0;
   let hits = 0;
+  let covered = 0;
   for (const tok of tokens) {
-    if (hay.includes(tok) || hayTokens.some((h) => h.startsWith(tok) || tok.startsWith(h))) hits += 1;
+    if (hayTokens.includes(tok)) {
+      hits += 1;
+      covered += 1;
+    } else if (tok.length >= 3 && hayTokens.some((h) => h.length >= 3 && (h.startsWith(tok) || tok.startsWith(h)))) {
+      hits += 0.8;
+    }
   }
-  return hits / tokens.length;
+  return hits / tokens.length + (covered / hayTokens.length) * 0.01;
+}
+
+function productScore(name: string, product: CatalogProduct): number {
+  let best = tokenOverlap(name, product.name);
+  if (product.sku) best = Math.max(best, tokenOverlap(name, product.sku));
+  for (const a of product.aliases ?? []) best = Math.max(best, tokenOverlap(name, a) - 0.005);
+  return best;
 }
 
 /** Common kirana words: Tamil script / Tanglish -> English, so "arisi" finds "Rice". */
@@ -536,20 +568,20 @@ function matchProduct(name: string, products: CatalogProduct[]): CatalogProduct 
 function matchProductOne(name: string, products: CatalogProduct[]): CatalogProduct | undefined {
   let bestOverlap: { product: CatalogProduct; score: number } | undefined;
   for (const product of products) {
-    const score = Math.max(tokenOverlap(name, product.name), product.sku ? tokenOverlap(name, product.sku) : 0);
+    const score = productScore(name, product);
     if (!bestOverlap || score > bestOverlap.score) bestOverlap = { product, score };
   }
   if (bestOverlap && bestOverlap.score >= 0.6) return bestOverlap.product;
 
   const fuse = new Fuse(products, {
-    keys: ['name', 'sku'],
-    threshold: 0.6,
+    keys: ['name', 'sku', 'aliases'],
+    threshold: 0.35,
     includeScore: true,
     ignoreLocation: true,
   });
   const hits = fuse.search(name);
   const best = hits[0];
-  if (best && (best.score ?? 1) <= 0.6) return best.item;
+  if (best && (best.score ?? 1) <= 0.35) return best.item;
   return undefined;
 }
 

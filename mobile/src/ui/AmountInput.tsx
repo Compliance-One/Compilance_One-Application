@@ -53,6 +53,7 @@ export function TextField({
   keyboardType,
   autoFocus,
   maxLength,
+  autoCapitalize,
 }: {
   label?: string;
   value: string;
@@ -61,6 +62,7 @@ export function TextField({
   keyboardType?: 'default' | 'phone-pad' | 'email-address' | 'number-pad';
   autoFocus?: boolean;
   maxLength?: number;
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
 }) {
   return (
     <View>
@@ -73,6 +75,7 @@ export function TextField({
         keyboardType={keyboardType}
         autoFocus={autoFocus}
         maxLength={maxLength}
+        autoCapitalize={autoCapitalize}
         style={s.text}
         accessibilityLabel={label}
       />

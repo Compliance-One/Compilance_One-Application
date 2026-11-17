@@ -44,3 +44,39 @@ describe('structured voice billing', () => {
     expect(nameVariants('சர்க்கரை')).toContain('sugar');
   });
 });
+
+describe('hardware catalogue matching', () => {
+  const { HARDWARE_CATALOG } = require('../data/hardwareCatalog');
+  const products = HARDWARE_CATALOG.map((p: any, i: number) => ({
+    id: `p${i}`,
+    name: p.name,
+    unit: p.unit,
+    sellingPrice: p.price,
+    hsnCode: p.hsn,
+    taxRate: p.gst,
+    aliases: p.aliases,
+  }));
+  const first = (text: string) => parseTranscript(text, { products }).items[0];
+
+  it('matches plurals ("screws", "hinges")', () => {
+    expect(first('10 screws').name).toMatch(/Screw/);
+    expect(first('2 hinges').name).toMatch(/Hinge/);
+  });
+
+  it('matches Tanglish and Tamil aliases', () => {
+    expect(first('1 kilo aani').name).toMatch(/Nails/);
+    expect(first('2 பூட்டு').name).toMatch(/lock/i);
+    expect(first('oru suthiyal').name).toMatch(/Hammer/);
+  });
+
+  it('prefers "tap" over "tape" and carries HSN + 18% GST', () => {
+    const it1 = first('1 tap');
+    expect(it1.name).toMatch(/Tap /);
+    expect(it1.hsnCode).toBe('8481');
+    expect(it1.taxRate).toBe(18);
+  });
+
+  it('does not force an unrelated word onto a catalogue item', () => {
+    expect(first('2 mangoes 50').productId).toBeUndefined();
+  });
+});

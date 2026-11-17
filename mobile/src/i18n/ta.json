@@ -218,7 +218,15 @@
     "unit": "அலகு",
     "rate": "விலை ₹",
     "amount": "தொகை",
-    "fromItems": "சேமித்த பொருள்"
+    "fromItems": "சேமித்த பொருள்",
+    "customerPhone": "போன் (விருப்பம்)",
+    "customerGstin": "GSTIN (விருப்பம், GST பில்லுக்கு)",
+    "clearCustomer": "அழி",
+    "gstinBadTitle": "GSTIN சரிபார்க்கவும்",
+    "gstinBad": "GSTIN 15 எழுத்து/எண்கள் இருக்க வேண்டும், எ.கா. 33ABCDE1234F1Z5. சாதாரண பில்லுக்கு காலியாக விடவும்.",
+    "gstinNeedsName": "GST பில்லுக்கு வாடிக்கையாளர் பெயரை உள்ளிடவும்.",
+    "b2bNote": "GST பில் (B2B) · {{state}}",
+    "newItemsAdded": "{{count}} புதிய பொருட்கள் உங்கள் பொருட்கள் பட்டியலில் சேர்க்கப்பட்டன."
   },
   "invoiceCreate": {
     "title": "புதிய வரி விலைப்பட்டியல்",
