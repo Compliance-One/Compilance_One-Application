@@ -76,7 +76,7 @@ async def list_gstr1_exports(
             SELECT id, business_id, period_from, period_to, total_invoices,
                    total_b2b, total_b2c, json_file_path, status, generated_at
             FROM gstr1_exports
-            WHERE replace(CAST(business_id AS TEXT), '-', '') = replace(CAST(:business_id AS TEXT), '-', '')
+            WHERE business_id = :business_id
             ORDER BY generated_at DESC
             """
         ),

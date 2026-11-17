@@ -15,3 +15,11 @@ yarn-debug.log*
 yarn-error.log*
 .DS_Store
 
+
+# SQLite database files
+backend/data/*.db
+backend/data/*.db-wal
+backend/data/*.db-shm
+*.db
+*.db-wal
+*.db-shm

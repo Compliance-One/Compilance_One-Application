@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, date
 from typing import List, Dict, Any, Optional, Set
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy import delete, select
 
 from app.models.entities import (

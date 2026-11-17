@@ -18,7 +18,7 @@ async def get_profit_and_loss(
             """
             SELECT category, SUM(amount) AS total
             FROM v_pl_income_entries
-            WHERE replace(CAST(business_id AS TEXT), '-', '') = replace(CAST(:business_id AS TEXT), '-', '')
+            WHERE business_id = :business_id
               AND entry_date BETWEEN :from_date AND :to_date
             GROUP BY category
             """
@@ -32,7 +32,7 @@ async def get_profit_and_loss(
             """
             SELECT category, SUM(amount) AS total
             FROM v_pl_expense_entries
-            WHERE replace(CAST(business_id AS TEXT), '-', '') = replace(CAST(:business_id AS TEXT), '-', '')
+            WHERE business_id = :business_id
               AND entry_date BETWEEN :from_date AND :to_date
             GROUP BY category
             """
@@ -64,7 +64,7 @@ async def get_balance_sheet(db: AsyncSession, business_id: uuid.UUID) -> dict:
             SELECT business_id, cash, bank, cash_and_bank, stock_value, receivables,
                    payables, owners_capital
             FROM v_balance_sheet
-            WHERE replace(CAST(business_id AS TEXT), '-', '') = replace(CAST(:business_id AS TEXT), '-', '')
+            WHERE business_id = :business_id
             """
         ),
         {"business_id": str(business_id)},
@@ -100,7 +100,7 @@ async def get_dashboard_summary(
                 COALESCE(SUM(sgst_amount), 0) AS sgst,
                 COALESCE(SUM(igst_amount), 0) AS igst
             FROM invoices
-            WHERE replace(CAST(business_id AS TEXT), '-', '') = replace(CAST(:business_id AS TEXT), '-', '')
+            WHERE business_id = :business_id
               AND invoice_date BETWEEN :from_date AND :to_date
             """
         ),

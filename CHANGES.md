@@ -39,7 +39,7 @@ The project has two parts:
 | Part | Folder | Tech | Role |
 | :--- | :--- | :--- | :--- |
 | Phone app | `mobile/` | React Native (Expo) + SQLite | Works offline. Saves data on the phone. |
-| Server | `backend/` | FastAPI + PostgreSQL | Stores the final copy of all data in the cloud. |
+| Server | `backend/` | FastAPI + SQLite | Stores the final copy of all data for backup and sync. |
 
 ---
 
@@ -97,7 +97,7 @@ If the records are right, the total is always right.
                                                             error?   -> skip, report as failed
                                                               |
                                                               v
-                                                       8. Saved in PostgreSQL
+                                                       8. Saved in SQLite
         ^                                                     |
         |                                                     |
  9. Phone gets { processed_ids, failed_ids } <----------------+
@@ -177,7 +177,7 @@ Compilance_One-Application/
 | File | What it does | Why it exists |
 | :--- | :--- | :--- |
 | `.gitignore` | Lists files git must not track: `.venv`, `node_modules`, `__pycache__`, `.pytest_cache`, secrets. | Keeps the repo small and prevents leaking passwords. |
-| `docker-compose.yml` | Starts two services together: `db` (PostgreSQL 16 on port 5432, with saved disk volume) and `backend` (the FastAPI server). | One command starts the whole backend instead of many manual steps. |
+| `docker-compose.yml` | Starts the FastAPI backend and mounts a volume for the SQLite database file. | One command starts the backend instead of many manual steps. |
 | `CHANGES.md` | This guide. | So anyone can understand the project quickly. |
 
 ---
@@ -251,7 +251,7 @@ Built with FastAPI and SQLAlchemy 2.0 in **async** mode (the server can handle m
 | File | What it does |
 | :--- | :--- |
 | `Dockerfile` | Recipe to build the backend container image. |
-| `requirements.txt` | Python libraries: FastAPI, SQLAlchemy, asyncpg, alembic, pytest, and others. |
+| `requirements.txt` | Python libraries: FastAPI, SQLAlchemy, aiosqlite, alembic, pytest, and others. |
 | `alembic.ini` | Settings for Alembic (the database migration tool). |
 
 ### `app/main.py`: the front door
@@ -263,7 +263,7 @@ Built with FastAPI and SQLAlchemy 2.0 in **async** mode (the server can handle m
 Health check: `GET /health` returns `{"status":"ok","service":"compliance-one-gateway"}`.
 
 ### `app/db/session.py`: database connection
-- Creates the async engine (`create_async_engine`) using the `asyncpg` driver.
+- Creates the async engine (`create_async_engine`) using the `aiosqlite` driver.
 - Defines the `DeclarativeBase` that all models use.
 - Provides `get_db_session()`, which gives each request its own database session through FastAPI's `Depends(...)`.
 
@@ -275,7 +275,7 @@ SQLAlchemy models, one per table, matching the ER diagram 1:1:
 Also includes foreign keys with cascades, check rules (for example `payment_status` must be `PAID`, `UNPAID`, or `PARTIAL`), and UTC timestamps.
 **Why:** the database itself rejects invalid data, even if app code has a bug.
 
-### `app/db/views.sql`: calculated views in PostgreSQL
+### `app/db/views.py`: calculated views in SQLite
 
 | View | Meaning |
 | :--- | :--- |
@@ -360,7 +360,7 @@ Branch: `feat/core-infra-sync`
 | 5 | `feat(backend): implement sqlalchemy 2.0 orm models and postgres views` | Added `entities.py` and `views.sql`. | Server database structure now matches the design. |
 | 6 | `feat(backend): implement sync reconciler service and batch push endpoint` | Added `schemas/sync.py`, `sync_reconciler.py`, `api/v1/sync.py`. | The server can now receive and safely store phone changes. |
 | 7 | `test(backend): add pytest integration suite for sync reconciler pipeline` | Added `test_sync_reconciler.py`. | Proves insert, update, and failure isolation work. |
-| 8 | `feat(backend): configure async alembic migrations and run core schema with views` | Set up Alembic and the first migration. | One command builds all 8 tables and 3 views in PostgreSQL. |
+| 8 | `feat(backend): configure async alembic migrations and run core schema with views` | Set up Alembic and the first migration. | One command builds the schema and report views (now SQLite). |
 | 9 | `chore: add package markers and update mobile sync client` | Added missing `__init__.py` files, cleaned up leftover changes. | Clean imports and a clean git tree. |
 
 ### Build order at a glance
@@ -377,25 +377,9 @@ Cleanup:      [9 Markers + tidy]
 
 Run these from the project root unless noted.
 
-### Step 1: Start PostgreSQL
+### Step 1: Create the SQLite database and views
 
-```bash
-podman run -d \
-  --name compliance_one_postgres \
-  -e POSTGRES_USER=dev_user \
-  -e POSTGRES_PASSWORD=dev_password \
-  -e POSTGRES_DB=compliance_one_db \
-  -p 5432:5432 \
-  postgres:16-alpine
-```
-
-Check it is running:
-
-```bash
-podman ps
-```
-
-### Step 2: Create tables and views
+The backend uses a local SQLite file (`backend/data/compliance_one.db` by default). No separate database server is required.
 
 ```bash
 cd backend
@@ -459,9 +443,9 @@ Expected: no errors.
 
 | Problem | Likely cause | Fix |
 | :--- | :--- | :--- |
-| `alembic upgrade head` cannot connect | PostgreSQL is not running or `DATABASE_URL` is wrong. | Run `podman ps`, then check the credentials in Step 1. |
+| `alembic upgrade head` cannot create the file | The `data/` directory is missing or `DATABASE_URL` is wrong. | From `backend/`, run `mkdir -p data` and check `DATABASE_URL`. |
 | `ModuleNotFoundError: app` | Missing `PYTHONPATH=.` | Run commands from `backend/` with `PYTHONPATH=.` |
-| Port 5432 already in use | Another Postgres is running. | Stop it, or change the port mapping. |
+| Port 8000 already in use | Another process is bound to the API port. | Stop it, or change the port mapping. |
 | Tests fail on import | Missing `__init__.py` | Make sure every folder under `backend/app` and `backend/tests` has one. |
 | `tsc` shows type errors | Missing packages or wrong types. | Run `npm install` in `mobile/`, then retry. |
 | Items stay `pending` forever | No internet, or server unreachable. | Check the API URL in `client.ts` and that the server is running. |

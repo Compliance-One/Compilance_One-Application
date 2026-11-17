@@ -46,7 +46,7 @@ async def list_customer_balances(
             """
             SELECT customer_id, balance
             FROM v_customer_balances
-            WHERE replace(CAST(business_id AS TEXT), '-', '') = replace(CAST(:business_id AS TEXT), '-', '')
+            WHERE business_id = :business_id
             ORDER BY balance DESC
             """
         ),
@@ -65,10 +65,9 @@ async def customer_statement(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_business_owner),
 ):
-    # Date conditions are added only when a date is given. A bare
-    # "(:p IS NULL OR col >= :p)" fails under asyncpg because Postgres
-    # cannot infer the type of a NULL parameter.
-    conditions = ["replace(CAST(business_id AS TEXT), '-', '') = replace(CAST(:business_id AS TEXT), '-', '')", "replace(CAST(customer_id AS TEXT), '-', '') = replace(CAST(:customer_id AS TEXT), '-', '')"]
+    # Date conditions are added only when a date is given, so a bare
+    # NULL bind is never compared against a typed date column.
+    conditions = ["business_id = :business_id", "customer_id = :customer_id"]
     params = {"business_id": str(business_id), "customer_id": str(customer_id)}
     if from_date is not None:
         conditions.append("entry_date >= :from_date")

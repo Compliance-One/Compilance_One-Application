@@ -1,6 +1,6 @@
 # GST Voice Billing App — Database Schema (v2, normalized)
  
-Target stack: PostgreSQL on Neon (serverless) · offline-first mobile client syncing to this schema.
+Target stack: SQLite (SQLAlchemy async + aiosqlite) · offline-first mobile client syncing to this schema.
  
 ```mermaid
 erDiagram
@@ -43,7 +43,7 @@ erDiagram
         date financial_year_start
         varchar voice_language
         boolean offline_mode
-        jsonb printer_settings
+        json printer_settings
         timestamp created_at
     }
  
@@ -155,7 +155,7 @@ erDiagram
         uuid business_id FK
         uuid invoice_id FK "nullable"
         text raw_transcript
-        jsonb parsed_json
+        json parsed_json
         varchar language
         varchar input_mode "voice or text"
         timestamp created_at
@@ -185,7 +185,7 @@ erDiagram
  
 ## Normal form
  
-- **1NF–3NF/BCNF:** satisfied. No repeating groups, no partial or transitive dependencies. `printer_settings` and `parsed_json` (jsonb) are semi-structured payloads by design, not relational attributes — the accepted exception to strict atomicity for that use case.
+- **1NF–3NF/BCNF:** satisfied. No repeating groups, no partial or transitive dependencies. `printer_settings` and `parsed_json` (JSON) are semi-structured payloads by design, not relational attributes — the accepted exception to strict atomicity for that use case.
 - **4NF:** already satisfied in v1, and unchanged here. 4NF is violated when independent multi-valued facts about the same key are packed into one relation; this schema never did that — a business's products, customers, invoices, and expenses were already separate relations. There was no MVD to fix.
 - **The real fix in this revision:** `ledger_entries.balance` was a stored running total — a cached derived value, not a normalization violation in the classic sense, but a correctness risk specific to your offline-first architecture. Two devices can each append ledger rows while offline and compute a locally-consistent-but-mutually-divergent `balance`; whichever syncs last silently overwrites the other's number. Removing the column and computing balance as a view eliminates the conflict entirely — there's nothing to merge, because nothing is stored:
 ```sql

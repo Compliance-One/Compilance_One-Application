@@ -26,7 +26,7 @@ async def push_sync(
 ):
     """
     Ingests batched mutation operations from mobile clients and reconciles
-    against PostgreSQL with per-item savepoint isolation. Items are accepted
+    against SQLite with per-item savepoint isolation. Items are accepted
     only when they belong to a business owned (or being claimed) by the user.
     """
     return await reconciler.reconcile_batch(db, request.items, user=user)

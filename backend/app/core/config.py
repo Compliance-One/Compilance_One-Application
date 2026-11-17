@@ -4,11 +4,13 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///./data/compliance_one.db"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    DATABASE_URL: str = "postgresql+asyncpg://dev_user:dev_password@localhost:5432/compliance_one_db"
+    DATABASE_URL: str = DEFAULT_DATABASE_URL
     # Empty by default. A hardcoded production secret is never shipped in code.
     # docker-compose.yml sets SECRET_KEY for local development only.
     SECRET_KEY: str = ""
