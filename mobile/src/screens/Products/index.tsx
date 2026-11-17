@@ -15,6 +15,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
 import { Screen } from '../../ui';
 import { DecimalInput } from '../../ui/DecimalInput';
+import { HsnPicker } from '../../ui/HsnPicker';
 import { useAppStore } from '../../store/useAppStore';
 import { getDb } from '../../db/schema';
 import { deleteProduct, listProducts, upsertProduct } from '../../db/repositories';
@@ -340,6 +341,12 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
                     }
                     placeholder={t('products.hsnPlaceholder')}
                     keyboardType="numeric"
+                  />
+                  <HsnPicker
+                    initialQuery={formData.name}
+                    onPick={(e) =>
+                      setFormData((prev) => ({ ...prev, hsnCode: e.code, taxRate: e.rate ?? prev.taxRate }))
+                    }
                   />
                 </View>
               </View>

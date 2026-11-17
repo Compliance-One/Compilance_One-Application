@@ -18,7 +18,7 @@ import { createInvoice, nextInvoiceNumber } from '../../db/repositories';
 import { localISODate } from '../../lib/dates';
 import { formatINR } from '../../lib/format';
 import { numberToInput, parseDecimal, sanitizeDecimalInput } from '../../lib/numberInput';
-import { Screen } from '../../ui';
+import { HsnPicker, Screen } from '../../ui';
 import { alertActionError, printInvoiceById, shareInvoicePdfById } from '../../billing/invoiceActions';
 import {
   INDIAN_STATES,
@@ -646,6 +646,12 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
                     }
                     placeholder={t('invoiceCreate.hsnPlaceholder')}
                     keyboardType="numeric"
+                  />
+                  <HsnPicker
+                    initialQuery={editingItem.name}
+                    onPick={(e) =>
+                      setEditingItem((prev) => ({ ...prev, hsnCode: e.code, taxRate: e.rate ?? prev.taxRate }))
+                    }
                   />
                 </View>
 

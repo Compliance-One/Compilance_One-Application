@@ -595,5 +595,12 @@
     "cashToday": "Received today",
     "owed": "Owed to you",
     "voiceBill": "Bill by voice"
+  },
+  "hsn": {
+    "find": "Find HSN",
+    "title": "Find HSN code",
+    "placeholder": "Type item name or code (rice, arisi, 1006)",
+    "none": "No match. You can leave HSN empty.",
+    "note": "GST rate shown is typical. Check with your auditor if unsure."
   }
 }
