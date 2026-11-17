@@ -20,6 +20,18 @@ export interface SyncPullResponse {
 
 type RequestInitWithJson = RequestInit & { json?: unknown };
 
+/** HTTP failure from a sync endpoint, carrying the status so callers can react (e.g. 404 on pull). */
+export class SyncHttpError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly body: string,
+    message: string
+  ) {
+    super(message);
+    this.name = 'SyncHttpError';
+  }
+}
+
 export class ApiClient {
   private token: string | null = null;
   private refreshHandler: (() => Promise<boolean>) | null = null;
@@ -72,7 +84,7 @@ export class ApiClient {
     });
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`Sync Push failed (${response.status}): ${errText}`);
+      throw new SyncHttpError(response.status, errText, `Sync Push failed (${response.status}): ${errText}`);
     }
     return (await response.json()) as SyncPushResponse;
   }
@@ -83,7 +95,7 @@ export class ApiClient {
     const response = await this.request(url, { method: 'GET' });
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`Sync Pull failed (${response.status}): ${errText}`);
+      throw new SyncHttpError(response.status, errText, `Sync Pull failed (${response.status}): ${errText}`);
     }
     return (await response.json()) as SyncPullResponse;
   }

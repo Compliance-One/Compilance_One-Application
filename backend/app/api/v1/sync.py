@@ -76,6 +76,8 @@ async def pull_sync(
                     row_dict[col.name] = str(val)
                 elif isinstance(val, datetime):
                     row_dict[col.name] = val.isoformat()
+                elif isinstance(val, bool):
+                    row_dict[col.name] = int(val)  # mobile stores booleans as 0/1
                 elif hasattr(val, "__float__"):
                     row_dict[col.name] = float(val)
                 else:

@@ -93,6 +93,40 @@ export class OutboxRepository {
     );
   }
 
+  /**
+   * Give every FAILED item (including ones that exhausted MAX_RETRY_COUNT) a fresh start.
+   * Used after the server has accepted the business: earlier child items were rejected
+   * only because the business did not exist yet.
+   */
+  async requeueFailed(): Promise<number> {
+    const result = await this.db.runAsync(
+      `UPDATE outbox
+       SET status = 'PENDING', attempts = 0, updated_at = CURRENT_TIMESTAMP
+       WHERE status = 'FAILED';`
+    );
+    return result.changes ?? 0;
+  }
+
+  /** Like requeueFailed, but leaves the given outbox ids (this round's fresh failures) as FAILED. */
+  async requeueFailedExcept(keepIds: number[]): Promise<void> {
+    const guard = keepIds.length ? ` AND id NOT IN (${keepIds.map(() => '?').join(',')})` : '';
+    await this.db.runAsync(
+      `UPDATE outbox
+       SET status = 'PENDING', attempts = 0, updated_at = CURRENT_TIMESTAMP
+       WHERE status = 'FAILED'${guard};`,
+      keepIds
+    );
+  }
+
+  /** Drop unsent/failed items for one entity so a fresh snapshot can replace them. */
+  async discardUnsent(entityType: string, entityId: string): Promise<void> {
+    await this.db.runAsync(
+      `DELETE FROM outbox
+       WHERE entity_type = ? AND entity_id = ? AND status IN ('PENDING', 'FAILED');`,
+      [entityType, entityId]
+    );
+  }
+
   async countPending(): Promise<number> {
     const row = await this.db.getFirstAsync<{ c: number }>(
       `SELECT COUNT(*) AS c FROM outbox

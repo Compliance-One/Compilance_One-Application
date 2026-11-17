@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { apiClient } from '../api/client';
+import { apiClient, SyncHttpError } from '../api/client';
 import { CONFIG } from '../config/env';
 import { OutboxRepository, type OutboxItem } from './outbox';
 
@@ -201,6 +201,17 @@ export class SyncManager {
         const result = await apiClient.pushSync(items);
         if (result.processed_ids?.length) await this.outbox.markProcessed(result.processed_ids);
         if (result.failed_ids?.length) {
+          const failedSet = new Set(result.failed_ids);
+          for (const item of sorted) {
+            if (failedSet.has(item.id)) {
+              console.warn(`[sync] server rejected ${item.operation} ${item.entity_type} ${item.entity_id}`);
+            }
+          }
+        }
+        const businessAccepted = sorted.some(
+          (item) => item.entity_type === 'businesses' && (result.processed_ids ?? []).includes(item.id)
+        );
+        if (result.failed_ids?.length) {
           await this.outbox.markBatchFailed(result.failed_ids, 'Server rejected item');
         }
         // Anything still PROCESSING after the response is a client/server id mismatch — fail them.
@@ -208,6 +219,11 @@ export class SyncManager {
           ...(result.processed_ids ?? []),
           ...(result.failed_ids ?? []),
         ]);
+        if (businessAccepted) {
+          // Children that failed earlier (business unknown to the server) can now succeed.
+          // Reset them, but leave this batch's own failures counted so a bad row cannot loop forever.
+          await this.outbox.requeueFailedExcept(result.failed_ids ?? []);
+        }
         const leftover = ids.filter((id) => !acknowledged.has(id));
         if (leftover.length) await this.outbox.markBatchFailed(leftover, 'Not acknowledged by server');
       } catch (err) {
@@ -221,7 +237,22 @@ export class SyncManager {
     const businessId = this.getBusinessId();
     if (!businessId) return;
     const since = await this.lastPullCursor();
-    const result = await apiClient.pullSync(businessId, since ?? undefined);
+    let result;
+    try {
+      result = await apiClient.pullSync(businessId, since ?? undefined);
+    } catch (err) {
+      // The server has never stored this business (its first push was rejected or exhausted its
+      // retries). Re-send the local business row, then retry the pull once.
+      if (err instanceof SyncHttpError && err.status === 404) {
+        const requeued = await this.requeueBusiness(businessId);
+        if (!requeued) throw err;
+        await this.pushAll();
+        // Full pull: the cursor may have been saved against a business the server did not have.
+        result = await apiClient.pullSync(businessId);
+      } else {
+        throw err;
+      }
+    }
     const pending = await this.outbox.pendingEntityIds();
 
     for (const entityType of ENTITY_PRIORITY) {
@@ -233,6 +264,22 @@ export class SyncManager {
       }
     }
     if (result.server_time) await this.savePullCursor(result.server_time);
+  }
+
+  /** Re-enqueue the local business row as a fresh INSERT and revive failed child items. */
+  private async requeueBusiness(businessId: string): Promise<boolean> {
+    const row = await this.db.getFirstAsync<Record<string, unknown>>(
+      `SELECT * FROM businesses WHERE id = ?`,
+      [businessId]
+    );
+    if (!row) return false;
+    await this.db.withTransactionAsync(async () => {
+      await this.outbox.discardUnsent('businesses', businessId);
+      await this.outbox.enqueue('businesses', businessId, 'INSERT', toSyncPayload('businesses', row));
+      await this.outbox.requeueFailed();
+    });
+    console.warn('[sync] business missing on server; re-sending it');
+    return true;
   }
 
   private async upsertRow(entityType: string, row: Record<string, unknown>): Promise<void> {

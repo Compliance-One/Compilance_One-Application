@@ -1,15 +1,21 @@
+import json
+import logging
 import uuid
 from datetime import datetime, date
+from decimal import Decimal
 from typing import List, Dict, Any, Optional, Set
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.sqlite import insert
-from sqlalchemy import delete, select
+from sqlalchemy import Boolean, Date, DateTime, Integer, Numeric, String, Text, delete, select
 
 from app.models.entities import (
     Business, Customer, Product, Invoice, InvoiceItem, Payment, Expense, LedgerEntry,
     User, Supplier, Purchase, VoiceTransactionLog, Gstr1Export
 )
+from app.db.types import GUID, JSON
 from app.schemas.sync import SyncItemIn, SyncBatchResult
+
+logger = logging.getLogger(__name__)
 
 MODEL_MAP = {
     "businesses": Business,
@@ -25,20 +31,6 @@ MODEL_MAP = {
     "purchases": Purchase,
     "voice_transaction_logs": VoiceTransactionLog,
     "gstr1_exports": Gstr1Export,
-}
-
-UUID_FIELDS = {
-    "id", "business_id", "customer_id", "invoice_id", "product_id", "payment_id", 
-    "expense_id", "supplier_id", "owner_user_id"
-}
-
-DATE_FIELDS = {
-    "invoice_date", "payment_date", "expense_date", "entry_date", 
-    "purchase_date", "period_from", "period_to"
-}
-
-TIMESTAMP_FIELDS = {
-    "created_at", "updated_at", "generated_at"
 }
 
 ENTITY_PRIORITY = {
@@ -57,21 +49,67 @@ ENTITY_PRIORITY = {
     "gstr1_exports": 13,
 }
 
+def _parse_datetime(value: str) -> datetime:
+    """Parse ISO-8601 / SQLite CURRENT_TIMESTAMP strings ('Z' suffix, space separator, date-only)."""
+    text = value.strip()
+    if text.endswith(("Z", "z")):
+        text = text[:-1] + "+00:00"
+    return datetime.fromisoformat(text)
+
+
+def _coerce_value(column, value: Any) -> Any:
+    """Convert a JSON value sent by the mobile client into the Python type the column needs."""
+    if value is None:
+        return None
+    col_type = column.type
+    if isinstance(col_type, GUID):
+        return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+    # DateTime must be checked before Date: neither subclasses the other, but be explicit.
+    if isinstance(col_type, DateTime):
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            if not value.strip():
+                return None
+            return _parse_datetime(value)
+        return value
+    if isinstance(col_type, Date):
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        if isinstance(value, str):
+            if not value.strip():
+                return None
+            return _parse_datetime(value).date()
+        return value
+    if isinstance(col_type, Boolean):
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "t", "yes", "y"}
+        return bool(value)
+    if isinstance(col_type, Integer):
+        return int(value)
+    if isinstance(col_type, Numeric):
+        return value if isinstance(value, Decimal) else Decimal(str(value))
+    if isinstance(col_type, JSON):
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except ValueError:
+                return value
+        return value
+    if isinstance(col_type, (String, Text)) and isinstance(value, str):
+        # Mobile may send "" for an empty optional text field; a UNIQUE column such as
+        # businesses.gstin must see NULL, not '', or the second blank row would collide.
+        if column.name == "gstin" and not value.strip():
+            return None
+    return value
+
+
 class SyncReconciler:
-    def _coerce_types(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        coerced = {}
-        for key, value in data.items():
-            if value is None:
-                coerced[key] = None
-            elif key in UUID_FIELDS and isinstance(value, str):
-                coerced[key] = uuid.UUID(value)
-            elif key in DATE_FIELDS and isinstance(value, str):
-                coerced[key] = date.fromisoformat(value)
-            elif key in TIMESTAMP_FIELDS and isinstance(value, str):
-                coerced[key] = datetime.fromisoformat(value)
-            else:
-                coerced[key] = value
-        return coerced
+    def _coerce_types(self, model, data: Dict[str, Any]) -> Dict[str, Any]:
+        columns = model.__table__.columns
+        return {key: _coerce_value(columns[key], value) for key, value in data.items() if key in columns}
 
 
     async def _owned_business_ids(self, db: AsyncSession, user: User) -> Set[uuid.UUID]:
@@ -169,7 +207,7 @@ class SyncReconciler:
                         # Drop columns the model does not have (e.g. mobile-only fields)
                         model_cols = {c.name for c in model.__table__.columns}
                         raw_data = {k: v for k, v in raw_data.items() if k in model_cols}
-                        payload = self._coerce_types(raw_data)
+                        payload = self._coerce_types(model, raw_data)
 
                         insert_stmt = insert(model).values(**payload)
                         upsert_stmt = insert_stmt.on_conflict_do_update(
@@ -189,6 +227,10 @@ class SyncReconciler:
                 processed_ids.append(item.outbox_id)
 
             except Exception:
+                logger.exception(
+                    "sync: failed to apply %s %s %s (outbox_id=%s)",
+                    item.operation, item.entity_type, item.entity_id, item.outbox_id,
+                )
                 await db.rollback()
                 failed_ids.append(item.outbox_id)
 
