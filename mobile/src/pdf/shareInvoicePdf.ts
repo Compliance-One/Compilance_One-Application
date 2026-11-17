@@ -1,3 +1,4 @@
+import i18n from '../i18n';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import type { InvoiceDocument } from '../billing/invoiceDocument';
@@ -14,7 +15,7 @@ export async function shareInvoicePdf(invoice: InvoiceDocument): Promise<string>
   if (await Sharing.isAvailableAsync()) {
     await Sharing.shareAsync(uri, {
       mimeType: 'application/pdf',
-      dialogTitle: `Tax Invoice ${invoice.invoiceNumber}`,
+      dialogTitle: i18n.t('pdf.shareTitle', { number: invoice.invoiceNumber }),
       UTI: 'com.adobe.pdf',
     });
   }

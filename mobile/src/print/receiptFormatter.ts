@@ -2,6 +2,7 @@ import { amountInWords } from '../lib/amountInWords';
 import { formatINR } from '../lib/format';
 import { stateNameFor } from '../lib/gst';
 import type { InvoiceDocument } from '../billing/invoiceDocument';
+import i18n from '../i18n';
 
 export type PaperWidthMm = 58 | 80;
 
@@ -112,6 +113,7 @@ class EscPosWriter {
 
 export function buildReceipt(invoice: InvoiceDocument, paperWidthMm: PaperWidthMm = 58): ReceiptDocument {
   const cols = columnsFor(paperWidthMm);
+  const t = (key: string, opts?: Record<string, unknown>) => i18n.t(key, opts) as string;
   const nodes: ReceiptNode[] = [];
   const dash = '-'.repeat(cols);
   const eq = '='.repeat(cols);
@@ -121,28 +123,28 @@ export function buildReceipt(invoice: InvoiceDocument, paperWidthMm: PaperWidthM
     nodes.push({ type: 'text', value, ...opts });
   };
 
-  push('TAX INVOICE', { align: 'center', bold: true, size: 2 });
+  push(t('receipt.taxInvoice'), { align: 'center', bold: true, size: 2 });
   push(invoice.seller.name, { align: 'center', bold: true });
   if (invoice.seller.address) push(invoice.seller.address, { align: 'center' });
-  if (invoice.seller.phone) push(`Ph: ${invoice.seller.phone}`, { align: 'center' });
-  if (invoice.seller.gstin) push(`GSTIN: ${invoice.seller.gstin}`, { align: 'center', bold: true });
+  if (invoice.seller.phone) push(`${t('receipt.phone')}: ${invoice.seller.phone}`, { align: 'center' });
+  if (invoice.seller.gstin) push(`${t('receipt.gstin')}: ${invoice.seller.gstin}`, { align: 'center', bold: true });
   if (sellerState) {
     push(`${sellerState} (${invoice.seller.stateCode ?? ''})`, { align: 'center' });
   }
   nodes.push({ type: 'line', style: 'solid' });
-  push(`Inv: ${invoice.invoiceNumber}`);
-  push(`Date: ${dateLabel(invoice.invoiceDate)}`);
-  if (invoice.dueDate) push(`Due: ${dateLabel(invoice.dueDate)}`);
-  push(`Type: ${invoice.invoiceType}`);
-  push(`POS: ${invoice.placeOfSupplyName} (${invoice.placeOfSupplyCode})`);
+  push(`${t('receipt.inv')}: ${invoice.invoiceNumber}`);
+  push(`${t('receipt.date')}: ${dateLabel(invoice.invoiceDate)}`);
+  if (invoice.dueDate) push(`${t('receipt.due')}: ${dateLabel(invoice.dueDate)}`);
+  push(`${t('receipt.type')}: ${invoice.invoiceType}`);
+  push(`${t('receipt.pos')}: ${invoice.placeOfSupplyName} (${invoice.placeOfSupplyCode})`);
   if (invoice.buyer) {
     nodes.push({ type: 'line', style: 'dashed' });
-    push(`Bill to: ${invoice.buyer.name}`, { bold: true });
-    if (invoice.buyer.gstin) push(`GSTIN: ${invoice.buyer.gstin}`);
+    push(`${t('receipt.billTo')}: ${invoice.buyer.name}`, { bold: true });
+    if (invoice.buyer.gstin) push(`${t('receipt.gstin')}: ${invoice.buyer.gstin}`);
     if (invoice.buyer.address) push(invoice.buyer.address);
   }
   nodes.push({ type: 'line', style: 'solid' });
-  push(pad('Item', 'Amount', cols), { bold: true });
+  push(pad(t('receipt.item'), t('receipt.amount'), cols), { bold: true });
 
   for (const item of invoice.items) {
     const title = `${item.quantity} ${item.unit} ${item.name}`;
@@ -159,17 +161,17 @@ export function buildReceipt(invoice: InvoiceDocument, paperWidthMm: PaperWidthM
   }
 
   nodes.push({ type: 'line', style: 'solid' });
-  push(pad('Taxable', money(invoice.taxableAmount), cols));
+  push(pad(t('pdf.taxable'), money(invoice.taxableAmount), cols));
   if (invoice.cgstAmount > 0) push(pad('CGST', money(invoice.cgstAmount), cols));
   if (invoice.sgstAmount > 0) push(pad('SGST', money(invoice.sgstAmount), cols));
   if (invoice.igstAmount > 0) push(pad('IGST', money(invoice.igstAmount), cols));
-  if (invoice.discount > 0) push(pad('Discount', money(invoice.discount), cols));
+  if (invoice.discount > 0) push(pad(t('receipt.discount'), money(invoice.discount), cols));
   nodes.push({ type: 'line', style: 'solid' });
-  push(pad('TOTAL', money(invoice.totalAmount), cols), { bold: true, size: 2 });
+  push(pad(t('receipt.total'), money(invoice.totalAmount), cols), { bold: true, size: 2 });
   push(amountInWords(invoice.totalAmount));
-  push(`Reverse charge: ${invoice.reverseCharge ? 'Y' : 'N'}`);
+  push(`${t('receipt.reverseCharge')}: ${invoice.reverseCharge ? t('receipt.yes') : t('receipt.no')}`);
   nodes.push({ type: 'feed', lines: 1 });
-  push('Thank you', { align: 'center' });
+  push(t('receipt.thankYou'), { align: 'center' });
   nodes.push({ type: 'feed', lines: 2 });
   nodes.push({ type: 'cut' });
 

@@ -1,3 +1,4 @@
+import i18n from '../i18n';
 import { PermissionsAndroid, Platform } from 'react-native';
 import type { InvoiceDocument } from '../billing/invoiceDocument';
 import { buildReceipt, type PaperWidthMm, type ReceiptNode } from './receiptFormatter';
@@ -44,7 +45,7 @@ export async function requestBluetoothPermissions(): Promise<boolean> {
 export async function scanPrinters(): Promise<DiscoveredPrinter[]> {
   const granted = await requestBluetoothPermissions();
   if (!granted) {
-    throw new Error('Bluetooth permission was denied. Allow nearby devices / Bluetooth in system settings.');
+    throw new Error(i18n.t('receipt.permissionDenied'));
   }
   const driver = await loadDriver();
   const { paired, found } = await driver.default.scan();
@@ -100,11 +101,11 @@ export async function printInvoice(
 ): Promise<void> {
   const saved = printer ?? (await loadSavedPrinter());
   if (!saved) {
-    throw new Error('No printer selected. Choose a printer in Settings first.');
+    throw new Error(i18n.t('receipt.noPrinter'));
   }
   const granted = await requestBluetoothPermissions();
   if (!granted) {
-    throw new Error('Bluetooth permission was denied.');
+    throw new Error(i18n.t('receipt.permissionDenied'));
   }
   const paperWidthMm: PaperWidthMm = saved.paperWidthMm === 80 ? 80 : 58;
   const receipt = buildReceipt(invoice, paperWidthMm);

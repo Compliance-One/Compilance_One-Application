@@ -1,4 +1,5 @@
 import { amountInWords } from '../lib/amountInWords';
+import i18n from '../i18n';
 import { formatINR } from '../lib/format';
 import type { InvoiceDocument } from '../billing/invoiceDocument';
 
@@ -28,6 +29,7 @@ function money(n: number): string {
  * and amounts, and the total in figures and words.
  */
 export function buildInvoiceHtml(invoice: InvoiceDocument): string {
+  const t = (key: string, opts?: Record<string, unknown>) => i18n.t(key, opts) as string;
   const isInter = invoice.igstAmount > 0;
   const itemRows = invoice.items
     .map((item, idx) => {
@@ -54,10 +56,10 @@ export function buildInvoiceHtml(invoice: InvoiceDocument): string {
     .join('');
 
   const buyerGstin = invoice.buyer?.gstin
-    ? `<div><strong>GSTIN:</strong> ${esc(invoice.buyer.gstin)}</div>`
+    ? `<div><strong>${esc(t('pdf.gstin'))}:</strong> ${esc(invoice.buyer.gstin)}</div>`
     : invoice.invoiceType === 'B2B'
-      ? `<div><strong>GSTIN:</strong> <span class="warn">Missing (required for B2B)</span></div>`
-      : `<div><strong>GSTIN:</strong> Unregistered / B2C</div>`;
+      ? `<div><strong>${esc(t('pdf.gstin'))}:</strong> <span class="warn">${esc(t('pdf.missingB2b'))}</span></div>`
+      : `<div><strong>${esc(t('pdf.gstin'))}:</strong> ${esc(t('pdf.unregistered'))}</div>`;
 
   return `<!DOCTYPE html>
 <html>
@@ -89,49 +91,49 @@ export function buildInvoiceHtml(invoice: InvoiceDocument): string {
   </style>
 </head>
 <body>
-  <h1>TAX INVOICE</h1>
-  <p class="muted c">Original for Recipient</p>
+  <h1>${esc(t('pdf.taxInvoice'))}</h1>
+  <p class="muted c">${esc(t('pdf.originalForRecipient'))}</p>
   <div class="row box">
     <div class="col">
       <h2>${esc(invoice.seller.name)}</h2>
       <div>${esc(invoice.seller.address || '')}</div>
-      <div>${invoice.seller.phone ? 'Ph: ' + esc(invoice.seller.phone) : ''}</div>
-      <div><strong>GSTIN:</strong> ${esc(invoice.seller.gstin || 'Not added')}</div>
-      <div><strong>State:</strong> ${esc(invoice.seller.stateName || '')} (${esc(invoice.seller.stateCode || '')})</div>
+      <div>${invoice.seller.phone ? t('pdf.phone') + ': ' + esc(invoice.seller.phone) : ''}</div>
+      <div><strong>${esc(t('pdf.gstin'))}:</strong> ${esc(invoice.seller.gstin || t('pdf.notAdded'))}</div>
+      <div><strong>${esc(t('pdf.state'))}:</strong> ${esc(invoice.seller.stateName || '')} (${esc(invoice.seller.stateCode || '')})</div>
     </div>
     <div class="col">
-      <div><strong>Invoice No.:</strong> ${esc(invoice.invoiceNumber)}</div>
-      <div><strong>Invoice Date:</strong> ${d(invoice.invoiceDate)}</div>
-      <div><strong>Due Date:</strong> ${d(invoice.dueDate)}</div>
-      <div><strong>Invoice Type:</strong> ${esc(invoice.invoiceType)}</div>
-      <div><strong>Place of Supply:</strong> ${esc(invoice.placeOfSupplyName)} (${esc(invoice.placeOfSupplyCode)})</div>
-      <div><strong>Reverse Charge:</strong> ${invoice.reverseCharge ? 'Yes' : 'No'}</div>
+      <div><strong>${esc(t('pdf.invoiceNoFull'))}:</strong> ${esc(invoice.invoiceNumber)}</div>
+      <div><strong>${esc(t('pdf.invoiceDate'))}:</strong> ${d(invoice.invoiceDate)}</div>
+      <div><strong>${esc(t('pdf.dueDate'))}:</strong> ${d(invoice.dueDate)}</div>
+      <div><strong>${esc(t('pdf.invoiceType'))}:</strong> ${esc(invoice.invoiceType)}</div>
+      <div><strong>${esc(t('pdf.placeOfSupply'))}:</strong> ${esc(invoice.placeOfSupplyName)} (${esc(invoice.placeOfSupplyCode)})</div>
+      <div><strong>${esc(t('pdf.reverseCharge'))}:</strong> ${invoice.reverseCharge ? t('pdf.yes') : t('pdf.no')}</div>
     </div>
   </div>
   <div class="box" style="border-top:0">
-    <strong>Bill to / Recipient</strong>
-    <div>${esc(invoice.buyer?.name || 'Walk-in customer')}</div>
+    <strong>${esc(t('pdf.billToRecipient'))}</strong>
+    <div>${esc(invoice.buyer?.name || t('pdf.walkIn'))}</div>
     <div>${esc(invoice.buyer?.address || '')}</div>
     ${buyerGstin}
-    <div><strong>State:</strong> ${esc(invoice.buyer?.stateName || invoice.placeOfSupplyName || '')} (${esc(invoice.buyer?.stateCode || invoice.placeOfSupplyCode)})</div>
+    <div><strong>${esc(t('pdf.state'))}:</strong> ${esc(invoice.buyer?.stateName || invoice.placeOfSupplyName || '')} (${esc(invoice.buyer?.stateCode || invoice.placeOfSupplyCode)})</div>
   </div>
   <table>
     <thead>
       <tr>
         <th>#</th>
-        <th>Description</th>
-        <th>HSN</th>
-        <th>Qty</th>
-        <th>Rate</th>
-        <th>Disc.</th>
-        <th>Taxable value</th>
-        <th>CGST %</th>
-        <th>CGST</th>
-        <th>SGST %</th>
-        <th>SGST</th>
-        <th>IGST %</th>
-        <th>IGST</th>
-        <th>Amount</th>
+        <th>${esc(t('pdf.description'))}</th>
+        <th>${esc(t('pdf.hsn'))}</th>
+        <th>${esc(t('pdf.qty'))}</th>
+        <th>${esc(t('pdf.rate'))}</th>
+        <th>${esc(t('pdf.disc'))}</th>
+        <th>${esc(t('pdf.taxable'))}</th>
+        <th>${esc(t('pdf.cgst'))} %</th>
+        <th>${esc(t('pdf.cgst'))}</th>
+        <th>${esc(t('pdf.sgst'))} %</th>
+        <th>${esc(t('pdf.sgst'))}</th>
+        <th>${esc(t('pdf.igst'))} %</th>
+        <th>${esc(t('pdf.igst'))}</th>
+        <th>${esc(t('pdf.amount'))}</th>
       </tr>
     </thead>
     <tbody>
@@ -139,19 +141,19 @@ export function buildInvoiceHtml(invoice: InvoiceDocument): string {
     </tbody>
   </table>
   <table class="totals">
-    <tr><td>Taxable value</td><td class="r">${money(invoice.taxableAmount)}</td></tr>
-    <tr><td>CGST</td><td class="r">${money(invoice.cgstAmount)}</td></tr>
-    <tr><td>SGST</td><td class="r">${money(invoice.sgstAmount)}</td></tr>
-    <tr><td>IGST</td><td class="r">${money(invoice.igstAmount)}</td></tr>
-    <tr><td>Discount</td><td class="r">${money(invoice.discount)}</td></tr>
-    <tr class="grand"><td>Total</td><td class="r">${money(invoice.totalAmount)}</td></tr>
+    <tr><td>${esc(t('pdf.taxable'))}</td><td class="r">${money(invoice.taxableAmount)}</td></tr>
+    <tr><td>${esc(t('pdf.cgst'))}</td><td class="r">${money(invoice.cgstAmount)}</td></tr>
+    <tr><td>${esc(t('pdf.sgst'))}</td><td class="r">${money(invoice.sgstAmount)}</td></tr>
+    <tr><td>${esc(t('pdf.igst'))}</td><td class="r">${money(invoice.igstAmount)}</td></tr>
+    <tr><td>${esc(t('pdf.discount'))}</td><td class="r">${money(invoice.discount)}</td></tr>
+    <tr class="grand"><td>${esc(t('pdf.total'))}</td><td class="r">${money(invoice.totalAmount)}</td></tr>
   </table>
-  <div class="words">Amount in words: ${esc(amountInWords(invoice.totalAmount))}</div>
+  <div class="words">${esc(t('pdf.amountInWords'))}: ${esc(amountInWords(invoice.totalAmount))}</div>
   <div class="sign">
-    <div>For ${esc(invoice.seller.name)}</div>
-    <div style="margin-top:36px">Authorised Signatory</div>
+    <div>${esc(t('pdf.forSeller', { name: invoice.seller.name }))}</div>
+    <div style="margin-top:36px">${esc(t('pdf.authorisedSignatory'))}</div>
   </div>
-  <p class="fine">This is a computer-generated GST tax invoice under Rule 46 of the CGST Rules. It is a draft until filed / e-invoiced, if applicable.</p>
+  <p class="fine">${esc(t('pdf.draftFootnote'))}</p>
 </body>
 </html>`;
 }

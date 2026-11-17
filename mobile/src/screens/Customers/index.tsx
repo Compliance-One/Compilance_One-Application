@@ -145,11 +145,11 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
 
   const handleSaveCustomer = () => {
     if (!formData.name.trim()) {
-      Alert.alert('Validation Error', 'Customer Legal Name is required.');
+      Alert.alert(t('common.validationError'), t('customers.nameRequired'));
       return;
     }
     if (!formData.phone.trim()) {
-      Alert.alert('Validation Error', 'Phone number is required for invoicing.');
+      Alert.alert(t('common.validationError'), t('customers.phoneRequired'));
       return;
     }
 
@@ -166,7 +166,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
         await reload();
         setIsModalVisible(false);
       } catch (e) {
-        Alert.alert('Error', e instanceof Error ? e.message : String(e));
+        Alert.alert(t('common.error'), e instanceof Error ? e.message : String(e));
       }
     })();
   };
@@ -185,7 +185,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
         },
       });
     } else {
-      Alert.alert('Invoicing', `Opening invoice form for ${cust.name}`);
+      Alert.alert(t('customers.invoicing'), t('customers.openingInvoice', { name: cust.name }));
     }
   };
 
@@ -195,7 +195,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>{t('customers.title')}</Text>
-          <Text style={styles.subTitle}>Client GSTINs & Master Records</Text>
+          <Text style={styles.subTitle}>{t('customers.subtitle')}</Text>
         </View>
         <TouchableOpacity style={styles.addBtn} onPress={handleOpenAddModal}>
           <Text style={styles.addBtnText}>+ Add Customer</Text>
@@ -206,7 +206,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
       <View style={styles.searchBar}>
         <TextInput
           style={styles.searchInput}
-          placeholder="Search customer by name, GSTIN, phone..."
+          placeholder={t('customers.searchPlaceholder')}
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholderTextColor="#94A3B8"
@@ -265,24 +265,24 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
               <View style={{ flex: 1, marginRight: 8 }}>
                 <Text style={styles.custName}>{item.name}</Text>
                 {item.tradeName ? (
-                  <Text style={styles.tradeName}>Trade: {item.tradeName}</Text>
+                  <Text style={styles.tradeName}>{t('customers.trade')}: {item.tradeName}</Text>
                 ) : null}
               </View>
 
               {item.gstin ? (
                 <View style={styles.gstinBadge}>
-                  <Text style={styles.gstinBadgeText}>GSTIN VERIFIED</Text>
+                  <Text style={styles.gstinBadgeText}>{t('customers.gstinVerified')}</Text>
                 </View>
               ) : (
                 <View style={styles.unregisteredBadge}>
-                  <Text style={styles.unregisteredBadgeText}>UNREGISTERED</Text>
+                  <Text style={styles.unregisteredBadgeText}>{t('customers.unregistered')}</Text>
                 </View>
               )}
             </View>
 
             <View style={styles.detailsGrid}>
               <Text style={styles.detailText}>
-                GSTIN: <Text style={styles.detailVal}>{item.gstin || 'None (Consumer)'}</Text>
+                GSTIN: <Text style={styles.detailVal}>{item.gstin || t('customers.noneConsumer')}</Text>
               </Text>
               <Text style={styles.detailText}>
                 State: <Text style={styles.detailVal}>{item.stateName} ({item.stateCode})</Text>
@@ -297,7 +297,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
 
             <View style={styles.balanceRow}>
               <View>
-                <Text style={styles.balanceLabel}>Outstanding Balance</Text>
+                <Text style={styles.balanceLabel}>{t('customers.outstanding')}</Text>
                 <Text
                   style={[
                     styles.balanceVal,
@@ -313,7 +313,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                   style={styles.actionBtnEdit}
                   onPress={() => handleOpenEditModal(item)}
                 >
-                  <Text style={styles.actionTextEdit}>Edit</Text>
+                  <Text style={styles.actionTextEdit}>{t('customers.edit')}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -329,7 +329,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>👥</Text>
-            <Text style={styles.emptyTitle}>No Customers Found</Text>
+            <Text style={styles.emptyTitle}>{t('customers.emptyTitle')}</Text>
             <Text style={styles.emptySub}>
               Tap "+ Add Customer" to add your first client profile.
             </Text>
@@ -348,69 +348,69 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>
               {customers.some((c) => c.id === formData.id)
-                ? 'Edit Customer Details'
-                : 'Add New Customer'}
+                ? t('customers.editTitle')
+                : t('customers.addTitle')}
             </Text>
 
             <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.label}>Legal Business / Party Name *</Text>
+              <Text style={styles.label}>{t('customers.legalNameLabel')}</Text>
               <TextInput
                 style={styles.modalInput}
                 value={formData.name}
                 onChangeText={(val) => setFormData({ ...formData, name: val })}
-                placeholder="e.g. Acme Industrial Solutions Pvt Ltd"
+                placeholder={t('customers.legalNamePlaceholder')}
               />
 
-              <Text style={styles.label}>Trade Name (Optional)</Text>
+              <Text style={styles.label}>{t('customers.tradeNameLabel')}</Text>
               <TextInput
                 style={styles.modalInput}
                 value={formData.tradeName}
                 onChangeText={(val) => setFormData({ ...formData, tradeName: val })}
-                placeholder="e.g. Acme Hardware"
+                placeholder={t('customers.tradeNamePlaceholder')}
               />
 
               <View style={styles.formRow}>
                 <View style={{ flex: 1.3, marginRight: 8 }}>
-                  <Text style={styles.label}>GSTIN (15 Digits)</Text>
+                  <Text style={styles.label}>{t('customers.gstinLabel')}</Text>
                   <TextInput
                     style={styles.modalInput}
                     value={formData.gstin}
                     onChangeText={handleGstinInput}
-                    placeholder="27AA..."
+                    placeholder={t('customers.gstinPlaceholder')}
                     autoCapitalize="characters"
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>PAN</Text>
+                  <Text style={styles.label}>{t('customers.pan')}</Text>
                   <TextInput
                     style={styles.modalInput}
                     value={formData.pan}
                     onChangeText={(val) =>
                       setFormData({ ...formData, pan: val.toUpperCase() })
                     }
-                    placeholder="Auto from GST"
+                    placeholder={t('customers.autoFromGst')}
                   />
                 </View>
               </View>
 
               <View style={styles.formRow}>
                 <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.label}>Phone Number *</Text>
+                  <Text style={styles.label}>{t('customers.phoneLabel')}</Text>
                   <TextInput
                     style={styles.modalInput}
                     value={formData.phone}
                     onChangeText={(val) => setFormData({ ...formData, phone: val })}
-                    placeholder="+91..."
+                    placeholder={t('customers.phonePlaceholder')}
                     keyboardType="phone-pad"
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Email Address</Text>
+                  <Text style={styles.label}>{t('customers.emailLabel')}</Text>
                   <TextInput
                     style={styles.modalInput}
                     value={formData.email}
                     onChangeText={(val) => setFormData({ ...formData, email: val })}
-                    placeholder="billing@..."
+                    placeholder={t('customers.emailPlaceholder')}
                     keyboardType="email-address"
                     autoCapitalize="none"
                   />
@@ -419,7 +419,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
 
               <View style={styles.formRow}>
                 <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.label}>State Code</Text>
+                  <Text style={styles.label}>{t('customers.stateCode')}</Text>
                   <TextInput
                     style={styles.modalInput}
                     value={`${formData.stateName} (${formData.stateCode})`}
@@ -429,7 +429,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Credit Limit (₹)</Text>
+                  <Text style={styles.label}>{t('customers.creditLimit')}</Text>
                   <TextInput
                     style={styles.modalInput}
                     value={formData.creditLimit.toString()}
@@ -444,7 +444,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                 </View>
               </View>
 
-              <Text style={styles.label}>Billing Address</Text>
+              <Text style={styles.label}>{t('customers.billingAddress')}</Text>
               <TextInput
                 style={[styles.modalInput, { height: 60 }]}
                 value={formData.billingAddress}
@@ -452,7 +452,7 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                   setFormData({ ...formData, billingAddress: val })
                 }
                 multiline
-                placeholder="Door No, Street, City, Pincode"
+                placeholder={t('customers.addressPlaceholder')}
               />
             </ScrollView>
 
@@ -461,13 +461,13 @@ export const CustomersScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                 style={styles.cancelBtn}
                 onPress={() => setIsModalVisible(false)}
               >
-                <Text style={styles.cancelBtnText}>Cancel</Text>
+                <Text style={styles.cancelBtnText}>{t('customers.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.saveBtn}
                 onPress={handleSaveCustomer}
               >
-                <Text style={styles.saveBtnText}>Save Customer</Text>
+                <Text style={styles.saveBtnText}>{t('customers.save')}</Text>
               </TouchableOpacity>
             </View>
           </View>

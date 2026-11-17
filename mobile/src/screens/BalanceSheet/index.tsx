@@ -1,7 +1,7 @@
 /**
  * Balance Sheet: what you have, what you owe, and the net position.
- * Cash and bank are not tracked yet, so that row says so instead of showing
- * a misleading zero.
+ * Cash and bank are computed from opening balances, invoice payments,
+ * expenses, and paid purchases.
  */
 import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -40,9 +40,11 @@ export default function BalanceSheetScreen({ back, canGoBack }: ScreenProps) {
 
               <SectionTitle>{t('balanceSheet.assets')}</SectionTitle>
               <Card>
+                <AmountRow label={t('balanceSheet.cash')} value={formatINR(bs.cash)} />
+                <AmountRow label={t('balanceSheet.bank')} value={formatINR(bs.bank)} />
+                <AmountRow label={t('balanceSheet.cashAndBank')} value={formatINR(bs.cashAndBank)} />
                 <AmountRow label={t('balanceSheet.stockValue')} value={formatINR(bs.stockValue)} />
                 <AmountRow label={t('balanceSheet.receivables')} value={formatINR(bs.receivables)} />
-                <AmountRow label={t('balanceSheet.cashAndBank')} value={t('common.notTracked')} tone="faint" />
               </Card>
 
               <SectionTitle>{t('balanceSheet.liabilities')}</SectionTitle>

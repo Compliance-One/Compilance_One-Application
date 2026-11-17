@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import React from 'react';
 import {
   StyleSheet,
@@ -80,7 +81,19 @@ export const InvoiceCard: React.FC<InvoiceCardProps> = ({
   onPrint,
   containerStyle,
 }) => {
+  const { t } = useTranslation();
   const statusMeta = STATUS_CONFIG[invoice.status] || STATUS_CONFIG.UNPAID;
+  const statusLabel = t(
+    (
+      {
+        PAID: 'invoices.statusPaid',
+        UNPAID: 'invoices.statusUnpaid',
+        PARTIAL: 'invoices.statusPartial',
+        OVERDUE: 'invoices.statusOverdue',
+        CANCELLED: 'invoices.statusCancelled',
+      } as const
+    )[invoice.status] ?? 'invoices.statusUnpaid'
+  );
 
   return (
     <TouchableOpacity
@@ -105,7 +118,7 @@ export const InvoiceCard: React.FC<InvoiceCardProps> = ({
           ]}
         >
           <Text style={[styles.badgeText, { color: statusMeta.textColor }]}>
-            {statusMeta.label}
+            {statusLabel}
           </Text>
         </View>
       </View>
@@ -116,26 +129,26 @@ export const InvoiceCard: React.FC<InvoiceCardProps> = ({
           {invoice.customerName}
         </Text>
         {invoice.customerGstin ? (
-          <Text style={styles.customerGstin}>GSTIN: {invoice.customerGstin}</Text>
+          <Text style={styles.customerGstin}>{t('invoices.gstin')}: {invoice.customerGstin}</Text>
         ) : null}
       </View>
 
       {/* Meta Row: Date, Items Count, Total Amount */}
       <View style={styles.metaRow}>
         <View style={styles.dateAndItems}>
-          <Text style={styles.metaLabel}>Issued: {formatDate(invoice.date)}</Text>
+          <Text style={styles.metaLabel}>{t('invoices.issued')}: {formatDate(invoice.date)}</Text>
           <Text style={styles.metaSub}>
-            {invoice.itemsCount} {invoice.itemsCount === 1 ? 'item' : 'items'}
-            {invoice.dueDate ? ` • Due: ${formatDate(invoice.dueDate)}` : ''}
+            {invoice.itemsCount} {invoice.itemsCount === 1 ? t('invoices.itemOne') : t('invoices.itemMany')}
+            {invoice.dueDate ? ` • ${t('invoices.due')}: ${formatDate(invoice.dueDate)}` : ''}
           </Text>
         </View>
 
         <View style={styles.amountContainer}>
-          <Text style={styles.amountLabel}>Total Amount</Text>
+          <Text style={styles.amountLabel}>{t('invoices.totalAmount')}</Text>
           <Text style={styles.totalAmount}>{formatINR(invoice.totalAmount)}</Text>
           {invoice.balanceDue !== undefined && invoice.balanceDue > 0 ? (
             <Text style={styles.balanceDue}>
-              Bal: {formatINR(invoice.balanceDue)}
+              {t('invoices.balance')}: {formatINR(invoice.balanceDue)}
             </Text>
           ) : null}
         </View>
@@ -149,7 +162,7 @@ export const InvoiceCard: React.FC<InvoiceCardProps> = ({
               style={styles.actionBtn}
               onPress={() => onPrint(invoice)}
             >
-              <Text style={styles.actionBtnText}>Print</Text>
+              <Text style={styles.actionBtnText}>{t('invoices.print')}</Text>
             </TouchableOpacity>
           )}
           {onDownload && (
@@ -157,7 +170,7 @@ export const InvoiceCard: React.FC<InvoiceCardProps> = ({
               style={styles.actionBtn}
               onPress={() => onDownload(invoice)}
             >
-              <Text style={styles.actionBtnText}>PDF</Text>
+              <Text style={styles.actionBtnText}>{t('invoices.download')}</Text>
             </TouchableOpacity>
           )}
           {onShare && (
@@ -166,7 +179,7 @@ export const InvoiceCard: React.FC<InvoiceCardProps> = ({
               onPress={() => onShare(invoice)}
             >
               <Text style={[styles.actionBtnText, styles.shareBtnText]}>
-                Share
+                {t('invoices.sharePdf')}
               </Text>
             </TouchableOpacity>
           )}
