@@ -17,6 +17,7 @@ import { getDb } from '../../db/schema';
 import { listInvoices } from '../../db/repositories';
 import { displayPaymentStatus } from '../../lib/paymentStatus';
 import { localISODate } from '../../lib/dates';
+import { alertActionError, printInvoiceById, shareInvoicePdfById } from '../../billing/invoiceActions';
 
 
 const FILTER_TABS: { label: string; value: 'ALL' | InvoiceStatus }[] = [
@@ -116,11 +117,15 @@ export const InvoicesListScreen: React.FC<{ navigation?: any }> = ({
   };
 
   const handleDownload = (invoice: InvoiceCardData) => {
-    Alert.alert('Download Started', `Downloading PDF for ${invoice.invoiceNumber}`);
+    void shareInvoicePdfById(invoice.id).catch((err) => alertActionError(err, 'PDF'));
   };
 
   const handleShare = (invoice: InvoiceCardData) => {
-    Alert.alert('Share Invoice', `Sharing ${invoice.invoiceNumber} via WhatsApp / Email`);
+    void shareInvoicePdfById(invoice.id).catch((err) => alertActionError(err, 'Share PDF'));
+  };
+
+  const handlePrint = (invoice: InvoiceCardData) => {
+    void printInvoiceById(invoice.id).catch((err) => alertActionError(err, 'Print'));
   };
 
   return (
@@ -216,6 +221,7 @@ export const InvoicesListScreen: React.FC<{ navigation?: any }> = ({
             onPress={handleInvoicePress}
             onDownload={handleDownload}
             onShare={handleShare}
+            onPrint={handlePrint}
           />
         )}
         contentContainerStyle={styles.listContent}

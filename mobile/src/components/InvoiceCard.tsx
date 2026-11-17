@@ -30,6 +30,7 @@ export interface InvoiceCardProps {
   onPress?: (invoice: InvoiceCardData) => void;
   onDownload?: (invoice: InvoiceCardData) => void;
   onShare?: (invoice: InvoiceCardData) => void;
+  onPrint?: (invoice: InvoiceCardData) => void;
   containerStyle?: ViewStyle;
 }
 
@@ -76,6 +77,7 @@ export const InvoiceCard: React.FC<InvoiceCardProps> = ({
   onPress,
   onDownload,
   onShare,
+  onPrint,
   containerStyle,
 }) => {
   const statusMeta = STATUS_CONFIG[invoice.status] || STATUS_CONFIG.UNPAID;
@@ -140,17 +142,24 @@ export const InvoiceCard: React.FC<InvoiceCardProps> = ({
       </View>
 
       {/* Action Footer if handlers provided */}
-      {(onDownload || onShare) && (
+      {(onDownload || onShare || onPrint) && (
         <View style={styles.actionRow}>
+          {onPrint && (
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => onPrint(invoice)}
+            >
+              <Text style={styles.actionBtnText}>Print</Text>
+            </TouchableOpacity>
+          )}
           {onDownload && (
             <TouchableOpacity
               style={styles.actionBtn}
               onPress={() => onDownload(invoice)}
             >
-              <Text style={styles.actionBtnText}>Download PDF</Text>
+              <Text style={styles.actionBtnText}>PDF</Text>
             </TouchableOpacity>
           )}
-
           {onShare && (
             <TouchableOpacity
               style={[styles.actionBtn, styles.shareBtn]}

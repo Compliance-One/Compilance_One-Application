@@ -16,6 +16,7 @@ import { getDb } from '../../db/schema';
 import { createInvoice, nextInvoiceNumber } from '../../db/repositories';
 import { localISODate } from '../../lib/dates';
 import { formatINR } from '../../lib/format';
+import { alertActionError, printInvoiceById, shareInvoicePdfById } from '../../billing/invoiceActions';
 import {
   INDIAN_STATES,
   calculateGst,
@@ -278,7 +279,7 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
     setSaving(true);
     try {
       const db = await getDb();
-      await createInvoice(db, {
+      const invoiceId = await createInvoice(db, {
         businessId: business.id,
         sellerStateCode,
         buyerStateCode: customer.stateCode,
@@ -312,6 +313,14 @@ export const InvoiceCreateScreen: React.FC<{ navigation?: any; route?: any }> = 
           {
             text: t('invoiceCreate.viewInvoices'),
             onPress: () => navigation?.navigate && navigation.navigate('MainTabs', { screen: 'Invoices' }),
+          },
+          {
+            text: t('invoiceCreate.sharePdf'),
+            onPress: () => void shareInvoicePdfById(invoiceId).catch((err) => alertActionError(err, 'PDF')),
+          },
+          {
+            text: t('invoiceCreate.print'),
+            onPress: () => void printInvoiceById(invoiceId).catch((err) => alertActionError(err, 'Print')),
           },
         ]
       );

@@ -5,6 +5,7 @@ import { newId } from '../lib/id';
 import { calculateInvoiceTotals, normalizeStateCode, stateNameFor, type GstLineInput } from '../lib/gst';
 import { OutboxRepository } from '../sync/outbox';
 import { toSyncPayload } from '../sync/syncManager';
+import type { InvoiceDocument } from '../billing/invoiceDocument';
 
 export interface ProductRecord {
   id: string;
@@ -720,4 +721,86 @@ export async function recordGstr1Export(
     await outbox.enqueue('gstr1_exports', id, 'INSERT', toSyncPayload('gstr1_exports', payload));
   });
   return id;
+}
+
+export async function getInvoiceDetail(db: SQLiteDatabase, invoiceId: string): Promise<InvoiceDocument | null> {
+  const row = await db.getFirstAsync<Record<string, unknown>>(
+    `SELECT i.*,
+            c.id AS c_id, c.name AS c_name, c.gstin AS c_gstin, c.phone AS c_phone,
+            c.address AS c_address, c.state_code AS c_state,
+            b.id AS b_id, b.business_name AS b_name, b.gstin AS b_gstin, b.phone AS b_phone,
+            b.address AS b_address, b.state_code AS b_state
+     FROM invoices i
+     JOIN businesses b ON b.id = i.business_id
+     LEFT JOIN customers c ON c.id = i.customer_id
+     WHERE i.id = ?`,
+    [invoiceId]
+  );
+  if (!row) return null;
+
+  const items = await db.getAllAsync<Record<string, unknown>>(
+    `SELECT ii.*, p.name AS product_name, p.unit AS product_unit
+     FROM invoice_items ii
+     LEFT JOIN products p ON p.id = ii.product_id
+     WHERE ii.invoice_id = ?
+     ORDER BY ii.created_at, ii.id`,
+    [invoiceId]
+  );
+
+  const sellerState = normalizeStateCode(String(row.b_state ?? '')) || CONFIG.DEFAULT_STATE_CODE;
+  const buyerState = normalizeStateCode(String(row.c_state ?? '')) || sellerState;
+
+  return {
+    id: String(row.id),
+    invoiceNumber: String(row.invoice_number),
+    invoiceDate: String(row.invoice_date),
+    dueDate: (row.due_date as string | null) ?? null,
+    invoiceType: (String(row.invoice_type) === 'B2B' ? 'B2B' : 'B2C'),
+    placeOfSupplyCode: buyerState,
+    placeOfSupplyName: stateNameFor(buyerState),
+    reverseCharge: false,
+    subtotal: Number(row.subtotal ?? 0),
+    discount: Number(row.discount ?? 0),
+    taxableAmount: Number(row.taxable_amount ?? 0),
+    cgstAmount: Number(row.cgst_amount ?? 0),
+    sgstAmount: Number(row.sgst_amount ?? 0),
+    igstAmount: Number(row.igst_amount ?? 0),
+    totalAmount: Number(row.total_amount ?? 0),
+    paymentStatus: String(row.payment_status ?? 'UNPAID'),
+    seller: {
+      id: String(row.b_id),
+      name: String(row.b_name ?? 'My Business'),
+      gstin: (row.b_gstin as string | null) ?? null,
+      address: (row.b_address as string | null) ?? null,
+      phone: (row.b_phone as string | null) ?? null,
+      stateCode: sellerState,
+      stateName: stateNameFor(sellerState),
+    },
+    buyer: row.c_id
+      ? {
+          id: String(row.c_id),
+          name: String(row.c_name ?? 'Walk-in'),
+          gstin: (row.c_gstin as string | null) ?? null,
+          address: (row.c_address as string | null) ?? null,
+          phone: (row.c_phone as string | null) ?? null,
+          stateCode: buyerState,
+          stateName: stateNameFor(buyerState),
+        }
+      : null,
+    items: items.map((it, idx) => ({
+      id: String(it.id ?? idx),
+      name: String(it.product_name ?? 'Item'),
+      hsnCode: (it.hsn_code as string | null) ?? null,
+      quantity: Number(it.quantity ?? 0),
+      unit: String(it.product_unit ?? 'PCS'),
+      unitPrice: Number(it.unit_price ?? 0),
+      discount: Number(it.discount ?? 0),
+      gstRate: Number(it.gst_rate ?? 0),
+      taxableValue: Number(it.taxable_value ?? 0),
+      cgstAmount: Number(it.cgst_amount ?? 0),
+      sgstAmount: Number(it.sgst_amount ?? 0),
+      igstAmount: Number(it.igst_amount ?? 0),
+      lineTotal: Number(it.line_total ?? 0),
+    })),
+  };
 }
