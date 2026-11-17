@@ -15,6 +15,7 @@ import { updateBusinessProfile } from '../../db/repositories';
 import { useAppStore } from '../../store/useAppStore';
 import { INDIAN_STATES, isValidGstin, normalizeStateCode, stateNameFor } from '../../lib/gst';
 import { CONFIG } from '../../config/env';
+import PrinterPanel from './PrinterPanel';
 
 type Lang = 'en' | 'ta';
 
@@ -117,6 +118,8 @@ export default function SettingsScreen(_props: ScreenProps) {
             </>
           )}
         </ReportState>
+
+        <PrinterPanel />
       </View>
     </ScrollView>
   );
