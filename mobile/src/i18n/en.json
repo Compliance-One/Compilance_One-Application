@@ -21,7 +21,8 @@
     "delete": "Delete",
     "edit": "Edit",
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "ok": "OK"
   },
   "months": [
     "January",
@@ -204,7 +205,20 @@
     "taxable": "Taxable",
     "tax": "GST",
     "total": "Total",
-    "stateLabel": "State: {{code}}"
+    "stateLabel": "State: {{code}}",
+    "saveBill": "Save bill",
+    "priceMissing": "Some items have no rate. Type the rate in the red box.",
+    "speakMore": "Tap the mic to add more items",
+    "tapToSpeak": "Tap the mic and say the items",
+    "example": "e.g. “2 kilo arisi 60 rupees, 1 sugar 45”",
+    "typeHint": "Or type: 2 kg rice 60",
+    "customerOptional": "Customer (optional)",
+    "walkIn": "Walk-in customer",
+    "qty": "Qty",
+    "unit": "Unit",
+    "rate": "Rate ₹",
+    "amount": "Amount",
+    "fromItems": "from saved items"
   },
   "invoiceCreate": {
     "title": "New Tax Invoice",

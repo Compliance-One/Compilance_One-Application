@@ -135,7 +135,48 @@ const TA_NUMBERS: Record<string, number> = {
   'ஆயிரத்து': 1000,
 };
 
+/** Tamil numbers as people say them in English letters ("rendu kilo arisi aruvathu rupai"). */
+const TA_ROMAN_NUMBERS: Record<string, number> = {
+  onnu: 1, onru: 1, ondru: 1, oru: 1, oNNu: 1,
+  rendu: 2, randu: 2, irandu: 2, erandu: 2,
+  moonu: 3, munu: 3, moondru: 3, moonru: 3,
+  naalu: 4, nalu: 4, naangu: 4, nangu: 4,
+  anju: 5, ainthu: 5, aindhu: 5, anchu: 5,
+  aaru: 6, aru: 6,
+  ezhu: 7, elu: 7, yezhu: 7,
+  ettu: 8, yettu: 8,
+  ombodhu: 9, onbathu: 9, onbadhu: 9, ombathu: 9,
+  pathu: 10, padhu: 10, paththu: 10,
+  iruvathu: 20, irubathu: 20, iruvadhu: 20, irupathu: 20, irupadhu: 20,
+  muppathu: 30, muppadhu: 30,
+  narpathu: 40, naarpathu: 40, narpadhu: 40,
+  aimbathu: 50, ambathu: 50, aimpathu: 50, aimbadhu: 50,
+  aruvathu: 60, arubathu: 60, aruvadhu: 60, arupathu: 60,
+  ezhupathu: 70, elupathu: 70, ezhubadhu: 70,
+  enbathu: 80, embathu: 80, enbadhu: 80,
+  thonnooru: 90, thonnuru: 90,
+  nooru: 100, nuru: 100,
+  aayiram: 1000, ayiram: 1000,
+};
+
+/** Fractions (arai kilo = half a kilo). Only used as a quantity. */
+const FRACTIONS: Record<string, number> = {
+  arai: 0.5, 'அரை': 0.5, half: 0.5,
+  kaal: 0.25, 'கால்': 0.25, quarter: 0.25,
+  mukkaal: 0.75, 'முக்கால்': 0.75,
+};
+
 const UNIT_ALIASES: Record<string, string> = {
+  ennam: 'PCS',
+  'எண்ணம்': 'PCS',
+  'எண்ணிக்கை': 'PCS',
+  g: 'GMS',
+  gm: 'GMS',
+  gms: 'GMS',
+  gram: 'GMS',
+  grams: 'GMS',
+  'கிராம்': 'GMS',
+  ml: 'ML',
   pc: 'PCS',
   pcs: 'PCS',
   piece: 'PCS',
@@ -184,7 +225,7 @@ const UNIT_ALIASES: Record<string, string> = {
   rolls: 'ROLL',
 };
 
-const PRICE_STOP = /^(at|each|for|rate|rs|inr|rupee|rupees|ரூபாய்|ரூ|விலை)$/i;
+const PRICE_STOP = /^(at|each|for|rate|rs|rs\.|inr|rupee|rupees|rupai|rupaai|rupa|roobai|ரூபாய்|ரூபாய்க்கு|ரூ|ரூ\.|விலை)$/i;
 const GST_STOP = /^(with|gst|percent|percentage|vat|tax|சதவீதம்|ஜிஎஸ்டி)$/i;
 
 function tokenize(text: string): string[] {
@@ -197,7 +238,7 @@ function tokenize(text: string): string[] {
 }
 
 function parseDigitToken(tok: string): number | null {
-  const clean = tok.replace(/[₹,]/g, '');
+  const clean = tok.replace(/[₹,]/g, '').replace(/(rs|ரூ)\.?$/i, '').replace(/^(rs)\.?/i, '');
   if (/^\d+(\.\d+)?$/.test(clean)) return Number(clean);
   return null;
 }
@@ -215,6 +256,8 @@ export function parseNumberPhrase(tokens: string[]): { value: number; consumed: 
     const raw = tokens[i];
     const lower = raw.toLowerCase();
     const digit = parseDigitToken(raw);
+    // "45 2 kilo" is two numbers (price, then next quantity), so digits never chain.
+    if (digit !== null && used) return false;
     if (digit !== null) {
       current += digit;
       used = true;
@@ -245,8 +288,8 @@ export function parseNumberPhrase(tokens: string[]): { value: number; consumed: 
       i += 1;
       return true;
     }
-    if (raw in TA_NUMBERS) {
-      const n = TA_NUMBERS[raw];
+    if (raw in TA_NUMBERS || lower in TA_ROMAN_NUMBERS) {
+      const n = raw in TA_NUMBERS ? TA_NUMBERS[raw] : TA_ROMAN_NUMBERS[lower];
       if (n === 100 || n === 1000) {
         if (current === 0) current = 1;
         current *= n;
@@ -309,20 +352,38 @@ interface RawItem {
   taxRate?: number;
 }
 
-function parseSegment(segment: string): RawItem | null {
+function parseSegment(segment: string): RawItem[] {
   const tokens = tokenize(segment);
-  if (tokens.length === 0) return null;
+  const out: RawItem[] = [];
+  if (tokens.length === 0) return out;
 
   let quantity: number | undefined;
   let unit = 'PCS';
   let unitPrice: number | undefined;
   let taxRate: number | undefined;
-  const nameTokens: string[] = [];
+  let nameTokens: string[] = [];
+
+  const flush = () => {
+    const name = nameTokens.join(' ').trim();
+    if (name) out.push({ quantity: quantity ?? 1, unit, name, unitPrice, taxRate });
+    quantity = undefined;
+    unit = 'PCS';
+    unitPrice = undefined;
+    taxRate = undefined;
+    nameTokens = [];
+  };
 
   let i = 0;
   while (i < tokens.length) {
     const tok = tokens[i];
     const lower = tok.toLowerCase();
+
+    const frac = FRACTIONS[lower] ?? FRACTIONS[tok];
+    if (frac !== undefined && quantity === undefined) {
+      quantity = frac;
+      i += 1;
+      continue;
+    }
 
     if (GST_STOP.test(lower) || lower === 'with') {
       const ahead = parseNumberPhrase(tokens.slice(i + 1));
@@ -361,6 +422,11 @@ function parseSegment(segment: string): RawItem | null {
     if (num) {
       const after = tokens[i + num.consumed];
       const maybeUnit = after ? looksLikeUnit(after) : null;
+      // Recognisers often drop commas: "2 kilo rice 60 1 sugar 45". A number after a
+      // complete item (name + price), or a number followed by a unit once we already
+      // have a name and quantity, starts the next item.
+      const itemDone = nameTokens.length > 0 && quantity !== undefined && (unitPrice !== undefined || !!maybeUnit);
+      if (itemDone) flush();
       if (quantity === undefined) {
         quantity = num.value;
         i += num.consumed;
@@ -386,20 +452,13 @@ function parseSegment(segment: string): RawItem | null {
     i += 1;
   }
 
-  const name = nameTokens.join(' ').trim();
-  if (!name) return null;
-  return {
-    quantity: quantity ?? 1,
-    unit,
-    name,
-    unitPrice,
-    taxRate,
-  };
+  flush();
+  return out;
 }
 
 function splitItems(text: string): string[] {
   return text
-    .split(/\s+(?:and|,|மற்றும்|plus)\s+/i)
+    .split(/\s*[,;.\n]\s*|\s+(?:and|மற்றும்|plus|apram|aprom|அப்புறம்)\s+/i)
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 }
@@ -421,8 +480,60 @@ function tokenOverlap(query: string, candidate: string): number {
   return hits / tokens.length;
 }
 
+/** Common kirana words: Tamil script / Tanglish -> English, so "arisi" finds "Rice". */
+const NAME_ALIASES: Record<string, string[]> = {
+  rice: ['arisi', 'அரிசி'],
+  sugar: ['sakkarai', 'sarkarai', 'சர்க்கரை', 'சக்கரை', 'cheeni', 'jeeni'],
+  salt: ['uppu', 'உப்பு'],
+  oil: ['ennai', 'ennei', 'எண்ணெய்', 'எண்ணை'],
+  dal: ['paruppu', 'பருப்பு', 'dhal'],
+  milk: ['paal', 'pal', 'பால்'],
+  egg: ['muttai', 'முட்டை', 'eggs'],
+  flour: ['maavu', 'mavu', 'மாவு', 'atta'],
+  tea: ['tea thool', 'டீ', 'தேயிலை'],
+  coffee: ['kaapi', 'kapi', 'காபி'],
+  onion: ['vengayam', 'வெங்காயம்'],
+  tomato: ['thakkali', 'தக்காளி'],
+  potato: ['urulaikizhangu', 'urulai', 'உருளைக்கிழங்கு'],
+  soap: ['sopu', 'soppu', 'சோப்பு'],
+  biscuit: ['biscuits', 'பிஸ்கட்'],
+  chilli: ['milagai', 'மிளகாய்', 'chili'],
+  turmeric: ['manjal', 'மஞ்சள்'],
+  wheat: ['godhumai', 'gothumai', 'கோதுமை'],
+  jaggery: ['vellam', 'வெல்லம்'],
+  cement: ['சிமெண்ட்', 'siment'],
+};
+
+const ALIAS_INDEX: Record<string, string[]> = (() => {
+  const idx: Record<string, string[]> = {};
+  for (const [en, words] of Object.entries(NAME_ALIASES)) {
+    const group = [en, ...words];
+    for (const w of group) idx[w.toLowerCase()] = group;
+  }
+  return idx;
+})();
+
+/** The spoken name plus its English/Tamil equivalents, e.g. "arisi" -> ["arisi","rice","அரிசி"]. */
+export function nameVariants(name: string): string[] {
+  const words = name.toLowerCase().split(/\s+/).filter(Boolean);
+  const variants = new Set<string>([name]);
+  for (const w of words) {
+    const group = ALIAS_INDEX[w];
+    if (group) for (const g of group) variants.add(name.toLowerCase().replace(w, g));
+  }
+  return [...variants];
+}
+
 function matchProduct(name: string, products: CatalogProduct[]): CatalogProduct | undefined {
   if (products.length === 0 || !name) return undefined;
+  for (const variant of nameVariants(name)) {
+    const hit = matchProductOne(variant, products);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+function matchProductOne(name: string, products: CatalogProduct[]): CatalogProduct | undefined {
   let bestOverlap: { product: CatalogProduct; score: number } | undefined;
   for (const product of products) {
     const score = Math.max(tokenOverlap(name, product.name), product.sku ? tokenOverlap(name, product.sku) : 0);
@@ -468,8 +579,7 @@ export function parseTranscript(
 
   const items: ParsedVoiceItem[] = [];
   for (const segment of segments) {
-    const raw = parseSegment(segment);
-    if (!raw) continue;
+   for (const raw of parseSegment(segment)) {
     const product = matchProduct(raw.name, products);
     items.push({
       name: product?.name ?? raw.name,
@@ -482,6 +592,7 @@ export function parseTranscript(
       hsnCode: product?.hsnCode,
       matchedProductName: product?.name,
     });
+   }
   }
 
   const customer = spokenCustomer ? matchCustomer(spokenCustomer, customers) : undefined;
