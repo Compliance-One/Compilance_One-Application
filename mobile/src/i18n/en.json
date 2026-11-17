@@ -391,11 +391,17 @@
       "Electricals": "Electricals",
       "Hardware": "Hardware",
       "Paints": "Paints",
-      "BuildingMaterials": "Building materials"
+      "BuildingMaterials": "Building materials",
+      "Tools": "Tools"
     },
     "hsnPill": "HSN: {{value}}",
     "gstPill": "GST: {{rate}}%",
-    "unitPill": "Unit: {{unit}}"
+    "unitPill": "Unit: {{unit}}",
+    "seedBtn": "Load hardware shop items",
+    "seedBtnSub": "வன்பொருள் பொருட்கள் சேர்",
+    "seedDoneTitle": "Items added",
+    "seedDone": "{{count}} hardware items added. Change prices any time.",
+    "seedNone": "All hardware items are already in your list."
   },
   "inventory": {
     "title": "Inventory",

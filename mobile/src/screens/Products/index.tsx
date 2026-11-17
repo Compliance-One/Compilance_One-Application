@@ -18,7 +18,8 @@ import { DecimalInput } from '../../ui/DecimalInput';
 import { HsnPicker } from '../../ui/HsnPicker';
 import { useAppStore } from '../../store/useAppStore';
 import { getDb } from '../../db/schema';
-import { deleteProduct, listProducts, upsertProduct } from '../../db/repositories';
+import { deleteProduct, listProducts, seedHardwareCatalog, upsertProduct } from '../../db/repositories';
+import { BigButton } from '../../ui';
 import { newId } from '../../lib/id';
 
 export interface Product {
@@ -36,7 +37,7 @@ export interface Product {
 }
 
 
-const CATEGORIES = ['All', 'Plumbing', 'Electricals', 'Hardware', 'Paints', 'Building Materials'];
+const CATEGORIES = ['All', 'Plumbing', 'Electricals', 'Hardware', 'Paints', 'Building Materials', 'Tools'];
 const TAX_RATES = [0, 5, 12, 18, 28];
 const UNITS = ['PCS', 'BAG', 'CAN', 'BOX', 'KG', 'MTR', 'LTR'];
 
@@ -50,6 +51,33 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
     const db = await getDb();
     setProducts(await listProducts(db, businessId));
   }, [businessId]);
+
+  const [seeding, setSeeding] = useState(false);
+  const loadStarter = useCallback(async () => {
+    if (!businessId || seeding) return;
+    setSeeding(true);
+    try {
+      const db = await getDb();
+      const added = await seedHardwareCatalog(db, businessId);
+      await reload();
+      Alert.alert(t('products.seedDoneTitle'), added > 0 ? t('products.seedDone', { count: added }) : t('products.seedNone'));
+    } catch (e) {
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : String(e));
+    } finally {
+      setSeeding(false);
+    }
+  }, [businessId, seeding, reload, t]);
+  const seedButton = (
+    <BigButton
+      icon="🧰"
+      label={t('products.seedBtn')}
+      sublabel={t('products.seedBtnSub')}
+      variant={products.length === 0 ? 'primary' : 'secondary'}
+      busy={seeding}
+      onPress={() => void loadStarter()}
+      style={{ marginVertical: 12 }}
+    />
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -231,6 +259,7 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
         data={filteredProducts}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
+        ListFooterComponent={filteredProducts.length > 0 ? seedButton : null}
         renderItem={({ item }) => {
           const badge = getStockBadge(item.currentStock, item.minStockLevel);
           return (
@@ -291,9 +320,7 @@ export const ProductsScreen: React.FC<{ navigation?: any }> = () => {
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>📦</Text>
             <Text style={styles.emptyTitle}>{t('products.emptyTitle')}</Text>
-            <Text style={styles.emptySub}>
-              Tap "+ Add Product" to create your first catalog item.
-            </Text>
+            {seedButton}
           </View>
         }
       />

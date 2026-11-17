@@ -6,6 +6,7 @@ import { calculateInvoiceTotals, normalizeStateCode, stateNameFor, type GstLineI
 import { OutboxRepository } from '../sync/outbox';
 import { toSyncPayload } from '../sync/syncManager';
 import type { InvoiceDocument } from '../billing/invoiceDocument';
+import { HARDWARE_CATALOG } from '../data/hardwareCatalog';
 
 export interface ProductRecord {
   id: string;
@@ -1161,4 +1162,40 @@ export async function listCustomerBills(db: SQLiteDatabase, businessId: string, 
       paymentStatus: String(r.payment_status ?? 'UNPAID'),
     };
   });
+}
+
+
+/**
+ * One-tap starter catalogue. Goes through upsertProduct so every row is
+ * queued for sync. Items whose name already exists are skipped, so a second
+ * tap adds nothing. Returns how many were added.
+ */
+export async function seedHardwareCatalog(db: SQLiteDatabase, businessId: string): Promise<number> {
+  const existing = await db.getAllAsync<{ name: string }>(`SELECT name FROM products WHERE business_id = ?`, [businessId]);
+  const have = new Set(existing.map((r) => String(r.name).trim().toLowerCase()));
+  let added = 0;
+  for (const p of HARDWARE_CATALOG) {
+    if (have.has(p.name.toLowerCase())) continue;
+    await upsertProduct(
+      db,
+      businessId,
+      {
+        id: newId(),
+        name: p.name,
+        sku: '',
+        hsnCode: p.hsn,
+        category: p.category,
+        unit: p.unit,
+        sellingPrice: p.price,
+        purchasePrice: 0,
+        taxRate: p.gst,
+        currentStock: 50,
+        minStockLevel: 5,
+      },
+      true
+    );
+    have.add(p.name.toLowerCase());
+    added += 1;
+  }
+  return added;
 }

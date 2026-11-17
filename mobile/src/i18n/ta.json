@@ -391,11 +391,17 @@
       "Electricals": "மின்சாதனம்",
       "Hardware": "ஹார்டுவேர்",
       "Paints": "பெயிண்ட்",
-      "BuildingMaterials": "கட்டுமான பொருட்கள்"
+      "BuildingMaterials": "கட்டுமான பொருட்கள்",
+      "Tools": "கருவிகள்"
     },
     "hsnPill": "HSN: {{value}}",
     "gstPill": "GST: {{rate}}%",
-    "unitPill": "அலகு: {{unit}}"
+    "unitPill": "அலகு: {{unit}}",
+    "seedBtn": "வன்பொருள் பொருட்கள் சேர்",
+    "seedBtnSub": "Load hardware shop items",
+    "seedDoneTitle": "பொருட்கள் சேர்க்கப்பட்டன",
+    "seedDone": "{{count}} வன்பொருள் பொருட்கள் சேர்க்கப்பட்டன. விலையை எப்போது வேண்டுமானாலும் மாற்றலாம்.",
+    "seedNone": "எல்லா வன்பொருள் பொருட்களும் ஏற்கனவே உள்ளன."
   },
   "inventory": {
     "title": "சரக்கு",
