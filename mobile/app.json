@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Compliance One",
+    "slug": "compliance-one",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "complianceone",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.complianceone.app"
+    },
+    "android": {
+      "package": "com.complianceone.app"
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-font",
+      "expo-status-bar",
+      "expo-sharing"
+    ]
+  }
+}
