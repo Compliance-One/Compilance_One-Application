@@ -1,9 +1,9 @@
 import uuid
 from datetime import datetime, date
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Set
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.models.entities import (
     Business, Customer, Product, Invoice, InvoiceItem, Payment, Expense, LedgerEntry,
@@ -73,10 +73,57 @@ class SyncReconciler:
                 coerced[key] = value
         return coerced
 
+
+    async def _owned_business_ids(self, db: AsyncSession, user: User) -> Set[uuid.UUID]:
+        result = await db.execute(select(Business.id).where(Business.owner_user_id == user.id))
+        return {row[0] for row in result.all()}
+
+    async def _collect_allowed_business_ids(
+        self, db: AsyncSession, user: User, items: List[SyncItemIn]
+    ) -> Set[uuid.UUID]:
+        allowed = await self._owned_business_ids(db, user)
+        for item in items:
+            if item.entity_type != "businesses":
+                continue
+            try:
+                bid = uuid.UUID(item.entity_id)
+            except ValueError:
+                continue
+            existing = await db.get(Business, bid)
+            if existing is None or existing.owner_user_id is None or existing.owner_user_id == user.id:
+                allowed.add(bid)
+        return allowed
+
+    async def _business_id_for_item(
+        self, db: AsyncSession, item: SyncItemIn, entity_uuid: uuid.UUID
+    ) -> Optional[uuid.UUID]:
+        data = item.data or {}
+        if item.entity_type == "businesses":
+            return entity_uuid
+        raw = data.get("business_id")
+        if raw:
+            try:
+                return uuid.UUID(str(raw))
+            except ValueError:
+                return None
+        # Child of invoice (items, payments)
+        invoice_id = data.get("invoice_id")
+        if not invoice_id and item.entity_type in {"invoice_items", "payments"}:
+            invoice_id = entity_uuid  # not the invoice id
+        if invoice_id:
+            try:
+                inv = await db.get(Invoice, uuid.UUID(str(invoice_id)))
+            except ValueError:
+                inv = None
+            if inv is not None:
+                return inv.business_id
+        return None
+
     async def reconcile_batch(
         self,
         db: AsyncSession,
-        items: List[SyncItemIn]
+        items: List[SyncItemIn],
+        user: Optional[User] = None,
     ) -> SyncBatchResult:
         def sort_key(item: SyncItemIn) -> int:
             p = ENTITY_PRIORITY.get(item.entity_type, 99)
@@ -85,10 +132,18 @@ class SyncReconciler:
         sorted_items = sorted(items, key=sort_key)
         processed_ids: List[int] = []
         failed_ids: List[int] = []
+        allowed_businesses = (
+            await self._collect_allowed_business_ids(db, user, items) if user is not None else None
+        )
 
         for item in sorted_items:
             model = MODEL_MAP.get(item.entity_type)
             if not model:
+                failed_ids.append(item.outbox_id)
+                continue
+
+            # Users are created through /auth, never via the sync outbox.
+            if item.entity_type == "users":
                 failed_ids.append(item.outbox_id)
                 continue
 
@@ -98,11 +153,22 @@ class SyncReconciler:
                 failed_ids.append(item.outbox_id)
                 continue
 
+            if allowed_businesses is not None and user is not None:
+                bid = await self._business_id_for_item(db, item, entity_uuid)
+                if bid is None or bid not in allowed_businesses:
+                    failed_ids.append(item.outbox_id)
+                    continue
+
             try:
                 async with db.begin_nested():
                     if item.operation in ("INSERT", "UPDATE"):
                         raw_data = dict(item.data)
                         raw_data["id"] = entity_uuid
+                        if item.entity_type == "businesses" and user is not None:
+                            raw_data["owner_user_id"] = user.id
+                        # Drop columns the model does not have (e.g. mobile-only fields)
+                        model_cols = {c.name for c in model.__table__.columns}
+                        raw_data = {k: v for k, v in raw_data.items() if k in model_cols}
                         payload = self._coerce_types(raw_data)
 
                         insert_stmt = insert(model).values(**payload)

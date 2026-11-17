@@ -38,7 +38,9 @@ def build_financial_statements_xlsx(pl: dict, bs: dict) -> bytes:
     ws_bs.append(["Balance Sheet"])
     ws_bs["A1"].font = BOLD
     ws_bs.append([])
-    ws_bs.append(["Cash & bank", bs["cash_and_bank"], "(not yet tracked in the schema)"])
+    ws_bs.append(["Cash", bs.get("cash", 0)])
+    ws_bs.append(["Bank (incl. UPI)", bs.get("bank", 0)])
+    ws_bs.append(["Cash & bank", bs["cash_and_bank"]])
     ws_bs.append(["Stock value", bs["stock_value"]])
     ws_bs.append(["Receivables", bs["receivables"]])
     ws_bs.append(["Payables", bs["payables"]])

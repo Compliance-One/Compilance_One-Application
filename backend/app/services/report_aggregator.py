@@ -18,7 +18,7 @@ async def get_profit_and_loss(
             """
             SELECT category, SUM(amount) AS total
             FROM v_pl_income_entries
-            WHERE business_id = :business_id
+            WHERE replace(CAST(business_id AS TEXT), '-', '') = replace(CAST(:business_id AS TEXT), '-', '')
               AND entry_date BETWEEN :from_date AND :to_date
             GROUP BY category
             """
@@ -32,7 +32,7 @@ async def get_profit_and_loss(
             """
             SELECT category, SUM(amount) AS total
             FROM v_pl_expense_entries
-            WHERE business_id = :business_id
+            WHERE replace(CAST(business_id AS TEXT), '-', '') = replace(CAST(:business_id AS TEXT), '-', '')
               AND entry_date BETWEEN :from_date AND :to_date
             GROUP BY category
             """
@@ -61,10 +61,10 @@ async def get_balance_sheet(db: AsyncSession, business_id: uuid.UUID) -> dict:
     result = await db.execute(
         text(
             """
-            SELECT business_id, cash_and_bank, stock_value, receivables,
+            SELECT business_id, cash, bank, cash_and_bank, stock_value, receivables,
                    payables, owners_capital
             FROM v_balance_sheet
-            WHERE business_id = :business_id
+            WHERE replace(CAST(business_id AS TEXT), '-', '') = replace(CAST(:business_id AS TEXT), '-', '')
             """
         ),
         {"business_id": str(business_id)},
@@ -75,6 +75,8 @@ async def get_balance_sheet(db: AsyncSession, business_id: uuid.UUID) -> dict:
         # return a zeroed statement instead of raising.
         return {
             "business_id": business_id,
+            "cash": 0,
+            "bank": 0,
             "cash_and_bank": 0,
             "stock_value": 0,
             "receivables": 0,
@@ -98,7 +100,7 @@ async def get_dashboard_summary(
                 COALESCE(SUM(sgst_amount), 0) AS sgst,
                 COALESCE(SUM(igst_amount), 0) AS igst
             FROM invoices
-            WHERE business_id = :business_id
+            WHERE replace(CAST(business_id AS TEXT), '-', '') = replace(CAST(:business_id AS TEXT), '-', '')
               AND invoice_date BETWEEN :from_date AND :to_date
             """
         ),

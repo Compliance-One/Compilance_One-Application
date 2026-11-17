@@ -19,13 +19,15 @@ class Business(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     owner_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     business_name = Column(String, nullable=False)
-    gstin = Column(String, unique=True, nullable=False)
+    gstin = Column(String, unique=True, nullable=True)
     address = Column(Text)
     phone = Column(String)
     financial_year_start = Column(Date)
     voice_language = Column(String, default="ta-IN")
     offline_mode = Column(Boolean, default=True)
     printer_settings = Column(JSONB)
+    opening_cash_balance = Column(Numeric, default=0)
+    opening_bank_balance = Column(Numeric, default=0)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 class Product(Base):
@@ -119,6 +121,7 @@ class Expense(Base):
     description = Column(Text)
     amount = Column(Numeric, nullable=False)
     expense_date = Column(Date)
+    payment_mode = Column(String, default="CASH")
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 class Supplier(Base):
@@ -140,6 +143,7 @@ class Purchase(Base):
     purchase_date = Column(Date)
     amount = Column(Numeric)
     payment_status = Column(String)
+    payment_mode = Column(String, default="CASH")
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 class VoiceTransactionLog(Base):
@@ -165,3 +169,12 @@ class Gstr1Export(Base):
     json_file_path = Column(Text)
     status = Column(String)
     generated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    token_hash = Column(String, unique=True, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

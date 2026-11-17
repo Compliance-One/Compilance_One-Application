@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import require_business_owner
 from app.db.session import get_db
 
 router = APIRouter()
@@ -38,6 +39,7 @@ async def record_gstr1_export(
     payload: Gstr1ExportIn,
     business_id: uuid.UUID = Query(...),
     db: AsyncSession = Depends(get_db),
+    _user=Depends(require_business_owner),
 ):
     new_id = uuid.uuid4()
     result = await db.execute(
@@ -66,6 +68,7 @@ async def record_gstr1_export(
 async def list_gstr1_exports(
     business_id: uuid.UUID = Query(...),
     db: AsyncSession = Depends(get_db),
+    _user=Depends(require_business_owner),
 ):
     result = await db.execute(
         text(
@@ -73,7 +76,7 @@ async def list_gstr1_exports(
             SELECT id, business_id, period_from, period_to, total_invoices,
                    total_b2b, total_b2c, json_file_path, status, generated_at
             FROM gstr1_exports
-            WHERE business_id = :business_id
+            WHERE replace(CAST(business_id AS TEXT), '-', '') = replace(CAST(:business_id AS TEXT), '-', '')
             ORDER BY generated_at DESC
             """
         ),

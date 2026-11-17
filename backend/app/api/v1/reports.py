@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import require_business_owner
 from app.db.session import get_db
 from app.services.report_aggregator import (
     get_profit_and_loss,
@@ -29,6 +30,8 @@ class ProfitAndLoss(BaseModel):
 
 class BalanceSheet(BaseModel):
     business_id: uuid.UUID
+    cash: float
+    bank: float
     cash_and_bank: float
     stock_value: float
     receivables: float
@@ -54,6 +57,7 @@ async def profit_and_loss(
     from_date: date = Query(...),
     to_date: date = Query(...),
     db: AsyncSession = Depends(get_db),
+    _user=Depends(require_business_owner),
 ):
     return await get_profit_and_loss(db, business_id, from_date, to_date)
 
@@ -62,6 +66,7 @@ async def profit_and_loss(
 async def balance_sheet(
     business_id: uuid.UUID = Query(...),
     db: AsyncSession = Depends(get_db),
+    _user=Depends(require_business_owner),
 ):
     return await get_balance_sheet(db, business_id)
 
@@ -72,6 +77,7 @@ async def dashboard_summary(
     from_date: date = Query(...),
     to_date: date = Query(...),
     db: AsyncSession = Depends(get_db),
+    _user=Depends(require_business_owner),
 ):
     return await get_dashboard_summary(db, business_id, from_date, to_date)
 
@@ -82,6 +88,7 @@ async def export_excel(
     from_date: date = Query(...),
     to_date: date = Query(...),
     db: AsyncSession = Depends(get_db),
+    _user=Depends(require_business_owner),
 ):
     pl = await get_profit_and_loss(db, business_id, from_date, to_date)
     bs = await get_balance_sheet(db, business_id)

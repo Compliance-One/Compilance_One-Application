@@ -1,7 +1,6 @@
 """
-Customer & Ledger reporting endpoints. No auth layer exists in this repo
-yet (see sync.py) — business_id is passed as a plain query param, same
-convention as /api/v1/sync/pull. Update this file when real auth lands.
+Customer & Ledger reporting endpoints. Protected by the business-owner
+dependency (the caller must own business_id).
 """
 
 import uuid
@@ -13,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import require_business_owner
 from app.db.session import get_db
 
 router = APIRouter()
@@ -39,13 +39,14 @@ class LedgerEntry(BaseModel):
 async def list_customer_balances(
     business_id: uuid.UUID = Query(..., description="Target business UUID"),
     db: AsyncSession = Depends(get_db),
+    _user=Depends(require_business_owner),
 ):
     result = await db.execute(
         text(
             """
             SELECT customer_id, balance
             FROM v_customer_balances
-            WHERE business_id = :business_id
+            WHERE replace(CAST(business_id AS TEXT), '-', '') = replace(CAST(:business_id AS TEXT), '-', '')
             ORDER BY balance DESC
             """
         ),
@@ -62,11 +63,12 @@ async def customer_statement(
     from_date: Optional[date] = Query(None),
     to_date: Optional[date] = Query(None),
     db: AsyncSession = Depends(get_db),
+    _user=Depends(require_business_owner),
 ):
     # Date conditions are added only when a date is given. A bare
     # "(:p IS NULL OR col >= :p)" fails under asyncpg because Postgres
     # cannot infer the type of a NULL parameter.
-    conditions = ["business_id = :business_id", "customer_id = :customer_id"]
+    conditions = ["replace(CAST(business_id AS TEXT), '-', '') = replace(CAST(:business_id AS TEXT), '-', '')", "replace(CAST(customer_id AS TEXT), '-', '') = replace(CAST(:customer_id AS TEXT), '-', '')"]
     params = {"business_id": str(business_id), "customer_id": str(customer_id)}
     if from_date is not None:
         conditions.append("entry_date >= :from_date")
